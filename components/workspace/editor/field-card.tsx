@@ -91,7 +91,7 @@ export function FieldCard({
       ref={containerRef}
       id={id}
       className={cn(
-        "group relative rounded-2xl border transition-all duration-300 p-5",
+        "group relative rounded-2xl border transition-all duration-300 p-5 pl-6 overflow-hidden",
         isEditing
           ? "border-violet-500/50 bg-[#090d20]/90 shadow-glow"
           : highlight
@@ -100,6 +100,11 @@ export function FieldCard({
         className
       )}
     >
+      {/* Notion Hover Left Border Accent Indicator */}
+      <span className={cn(
+        "absolute left-0 top-0 bottom-0 w-[3px] bg-gradient-to-b from-blue-500 to-violet-500 transition-all duration-300 origin-left scale-x-0 group-hover:scale-x-100",
+        isEditing && "scale-x-100"
+      )} />
       {/* Label and Status Indicators */}
       <div className="flex items-center justify-between text-[10px] font-bold uppercase tracking-wider text-slate-500">
         <span className="flex items-center gap-1.5">
@@ -156,8 +161,8 @@ export function FieldCard({
           <div
             onClick={() => setIsEditing(true)}
             className={cn(
-              "text-sm leading-7 cursor-text min-h-[1.5rem]",
-              hasValue ? "text-slate-300 font-sans" : "text-slate-600 italic font-medium"
+              "text-sm leading-7 cursor-text min-h-[1.5rem] transition-colors duration-200",
+              hasValue ? "text-slate-300 font-sans" : "text-slate-600 hover:text-slate-400 font-medium"
             )}
           >
             {hasValue
@@ -166,7 +171,7 @@ export function FieldCard({
                     {line}
                   </p>
                 ))
-              : "Click to add details..."}
+              : "+ Click to add details..."}
           </div>
         )}
       </div>

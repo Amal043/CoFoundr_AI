@@ -56,23 +56,48 @@ export function UpdatePanel({ status }: UpdatePanelProps) {
               const isCompleted = status.completedAgents.includes(agent);
               const isRunning = status.currentAgent === agent && status.state === "running_agents";
               const label = agentLabels[agent] || agent;
+              const agentTasks: Record<string, string> = {
+                research: "Finding competitors...",
+                product: "Scoping MVP features...",
+                finance: "Forecasting revenue model...",
+                marketing: "Creating GTM channels...",
+              };
 
               return (
-                <div key={agent} className="flex items-center justify-between">
-                  <span className={`text-xs font-semibold ${isRunning ? "text-violet-400" : isCompleted ? "text-slate-400" : "text-slate-600"}`}>
-                    {label}
-                  </span>
-                  <div>
-                    {isCompleted ? (
-                      <span className="grid size-5 place-items-center rounded-full bg-emerald-500/10 text-emerald-400 border border-emerald-500/20">
-                        <Check className="size-3" />
-                      </span>
-                    ) : isRunning ? (
-                      <Loader2 className="size-4 text-violet-400 animate-spin" />
-                    ) : (
-                      <span className="size-2 rounded-full bg-slate-800" />
-                    )}
+                <div key={agent} className="border-b border-white/[0.02] pb-3 last:border-0 last:pb-0">
+                  <div className="flex items-center justify-between">
+                    <span className={`text-xs font-semibold ${isRunning ? "text-violet-400 font-bold" : isCompleted ? "text-slate-400" : "text-slate-600"}`}>
+                      {label}
+                    </span>
+                    <div>
+                      {isCompleted ? (
+                        <span className="grid size-5 place-items-center rounded-full bg-emerald-500/10 text-emerald-400 border border-emerald-500/20">
+                          <Check className="size-3" />
+                        </span>
+                      ) : isRunning ? (
+                        <Loader2 className="size-4 text-violet-400 animate-spin" />
+                      ) : (
+                        <span className="size-2 rounded-full bg-slate-800" />
+                      )}
+                    </div>
                   </div>
+
+                  {isRunning && (
+                    <div className="w-full mt-2.5 space-y-1 bg-slate-950/40 p-2.5 rounded-xl border border-white/5">
+                      <div className="flex items-center justify-between text-[9px] font-bold text-violet-400">
+                        <span>{agentTasks[agent] || "Compiling report..."}</span>
+                        <span className="animate-pulse font-mono">Running</span>
+                      </div>
+                      <div className="h-1.5 w-full rounded-full bg-slate-900 overflow-hidden">
+                        <motion.div
+                          initial={{ width: 0 }}
+                          animate={{ width: "100%" }}
+                          transition={{ duration: 1.6, repeat: Infinity, ease: "easeInOut" }}
+                          className="h-full rounded-full bg-gradient-to-r from-blue-500 to-violet-500"
+                        />
+                      </div>
+                    </div>
+                  )}
                 </div>
               );
             })}

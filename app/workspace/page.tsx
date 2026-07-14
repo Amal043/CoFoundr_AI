@@ -22,6 +22,7 @@ import { BrandMark } from "@/components/shared/brand-mark";
 import { Button } from "@/components/ui/button";
 import { WorkspaceData, WorkspaceCanvas } from "@/types/workspace";
 import { loadWorkspaceData, saveWorkspaceData } from "@/lib/workspace/storage/store";
+import { listStartups, switchStartup, Startup } from "@/lib/demo/startup-manager";
 import { Summary } from "@/components/workspace/dashboard/summary";
 import { FieldCard } from "@/components/workspace/editor/field-card";
 import { CanvasGrid } from "@/components/workspace/canvas/canvas-grid";
@@ -75,6 +76,8 @@ function WorkspaceContent() {
   const [searchResults, setSearchResults] = useState<SearchResult[]>([]);
   const [showSearchDropdown, setShowSearchDropdown] = useState(false);
   const [highlightFieldId, setHighlightFieldId] = useState<string | null>(null);
+  const [startups, setStartups] = useState<Startup[]>([]);
+  const [showProjectsDropdown, setShowProjectsDropdown] = useState(false);
 
   const searchRef = useRef<HTMLDivElement>(null);
 
@@ -90,6 +93,7 @@ function WorkspaceContent() {
       }
       setHasUndoBackup(versions.length >= 2);
     }
+    setStartups(listStartups());
   }, []);
 
   // Update undo availability periodically
@@ -456,6 +460,47 @@ function WorkspaceContent() {
         <Link href="/">
           <BrandMark />
         </Link>
+
+        {/* Startup Switcher */}
+        <div className="mt-6 px-1 relative text-left">
+          <label className="text-[8px] font-bold text-slate-500 uppercase tracking-widest block mb-1.5 pl-1">
+            Active Project
+          </label>
+          <div
+            onClick={() => setShowProjectsDropdown(!showProjectsDropdown)}
+            className="w-full rounded-xl border border-white/5 bg-white/[0.01] hover:bg-white/[0.03] px-3.5 py-2.5 text-xs font-semibold text-slate-200 cursor-pointer flex items-center justify-between transition"
+          >
+            <span className="truncate">{workspace?.overview?.name || "My Startup"}</span>
+            <span className="text-[10px] text-slate-500 font-bold ml-1.5">▼</span>
+          </div>
+
+          {showProjectsDropdown && (
+            <div className="absolute left-0 right-0 mt-1 z-40 rounded-xl border border-white/10 bg-slate-950 p-2 shadow-glow max-h-48 overflow-y-auto space-y-1">
+              {startups.map((s) => (
+                <div
+                  key={s.id}
+                  onClick={() => {
+                    switchStartup(s.id);
+                    window.location.reload();
+                  }}
+                  className={`rounded-lg px-2.5 py-1.5 text-xs font-medium cursor-pointer transition flex items-center justify-between text-left ${
+                    s.name === (workspace?.overview?.name || "My Startup")
+                      ? "bg-violet-600/20 border border-violet-500/30 text-violet-300"
+                      : "text-slate-300 hover:bg-white/5"
+                  }`}
+                >
+                  <span className="truncate">{s.name}</span>
+                  {s.workspaceData && <span className="text-[8px] font-bold text-emerald-400 uppercase">Strategy Ready</span>}
+                </div>
+              ))}
+              <Link href="/new-startup" className="block border-t border-white/5 pt-1.5 mt-1.5 text-left">
+                <div className="rounded-lg px-2.5 py-1.5 text-xs font-bold text-cyan-300 hover:bg-white/5 cursor-pointer transition text-center flex items-center justify-center gap-1">
+                  + New Startup
+                </div>
+              </Link>
+            </div>
+          )}
+        </div>
 
         <nav className="mt-8 flex-1 space-y-1">
           <Link

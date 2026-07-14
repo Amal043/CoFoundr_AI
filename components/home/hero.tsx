@@ -32,9 +32,13 @@ export function Hero() {
               Turn startup ideas into investor-ready businesses with an intelligent AI CEO coordinating specialized agents for research, product strategy, finance, marketing, and fundraising.
             </motion.p>
             <motion.div initial={{ opacity: 0, y: 16 }} animate={{ opacity: 1, y: 0 }} transition={{ duration: 0.6, delay: 0.24 }} className="mt-8 flex flex-col gap-3 sm:flex-row">
-              <Link href="/dashboard"><Button size="lg" className="w-full sm:w-auto">Start Building <ArrowRight className="size-4" /></Button></Link>
+              <Link href="/new-startup">
+                <Button size="lg" className="w-full sm:w-auto">
+                  Create New Startup <ArrowRight className="size-4" />
+                </Button>
+              </Link>
               <Button variant="outline" size="lg" className="w-full sm:w-auto border-cyan-500/20 text-cyan-300 hover:bg-cyan-500/10" onClick={handleTryDemo}>
-                <Play className="size-4 fill-current text-cyan-300 mr-2" /> Try Demo Mode
+                <Play className="size-4 fill-current text-cyan-300 mr-2" /> Explore Demo Startup
               </Button>
             </motion.div>
             <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} transition={{ duration: 0.7, delay: 0.45 }} className="mt-10 flex flex-wrap gap-x-5 gap-y-2 text-xs text-slate-400">

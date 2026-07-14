@@ -2,13 +2,17 @@
 
 import { useEffect, useRef, useState } from "react";
 import { AnimatePresence, motion } from "framer-motion";
-import { ArrowLeft, Bot, Send, User, Sidebar as SidebarIcon, CheckSquare, RefreshCw } from "lucide-react";
+import { ArrowLeft, ArrowRight, Bot, Brain, Send, User, Sidebar as SidebarIcon, CheckSquare, RefreshCw } from "lucide-react";
 import Link from "next/link";
 
 import { Sidebar, type StartupProfile } from "./sidebar";
 import { ProgressTracker, type InterviewProgress } from "./progress-tracker";
 import { SuggestedReplies } from "./suggested-replies";
 import { WelcomeScreen } from "./welcome-screen";
+import { ThinkingSteps } from "./thinking-steps";
+import { getActiveStartup, listStartups, saveActiveStartupWorkspace } from "@/lib/demo/startup-manager";
+import { GenerationModal } from "./generation-modal";
+import { WorkspaceData } from "@/types/workspace";
 
 interface Message {
   id: string;
@@ -43,10 +47,16 @@ export function ChatInterface() {
   const [suggestedReplies, setSuggestedReplies] = useState<string[]>([]);
   const [profile, setProfile] = useState<StartupProfile>(INITIAL_PROFILE);
   const [progress, setProgress] = useState<InterviewProgress>(INITIAL_PROGRESS);
+  const percentage = Math.round(
+    (Object.values(progress).filter((s) => s === "completed").length / 6) * 100
+  );
 
   // Mobile layout toggles
   const [mobileSidebarOpen, setMobileSidebarOpen] = useState(false);
   const [mobileProgressOpen, setMobileProgressOpen] = useState(false);
+
+  const [workspaceComplete, setWorkspaceComplete] = useState(false);
+  const [showGenerationModal, setShowGenerationModal] = useState(false);
 
   const chatEndRef = useRef<HTMLDivElement>(null);
 
@@ -62,10 +72,24 @@ export function ChatInterface() {
     const savedProgress = localStorage.getItem("cofoundr_chat_progress");
     const savedSuggestions = localStorage.getItem("cofoundr_chat_suggestions");
 
-    if (savedMessages) setMessages(JSON.parse(savedMessages));
+    setWorkspaceComplete(!!localStorage.getItem("cofoundr_workspace_outputs"));
+
+    let loadedMessages: Message[] = [];
+    if (savedMessages) {
+      loadedMessages = JSON.parse(savedMessages);
+      setMessages(loadedMessages);
+    }
     if (savedProfile) setProfile(JSON.parse(savedProfile));
     if (savedProgress) setProgress(JSON.parse(savedProgress));
     if (savedSuggestions) setSuggestedReplies(JSON.parse(savedSuggestions));
+
+    if (loadedMessages.length === 0) {
+      const activeStartup = getActiveStartup();
+      if (activeStartup && activeStartup.idea) {
+        handleSelectStarter(activeStartup.idea);
+      }
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   // Save state helper
@@ -79,6 +103,26 @@ export function ChatInterface() {
     localStorage.setItem("cofoundr_chat_profile", JSON.stringify(newProfile));
     localStorage.setItem("cofoundr_chat_progress", JSON.stringify(newProgress));
     localStorage.setItem("cofoundr_chat_suggestions", JSON.stringify(newSuggestions));
+
+    // Save to active startup object list
+    const activeId = localStorage.getItem("cofoundr_active_startup_id");
+    if (activeId) {
+      const list = listStartups();
+      const idx = list.findIndex((s) => s.id === activeId);
+      if (idx !== -1) {
+        list[idx].chatMessages = newMessages;
+        list[idx].progress = newProgress as unknown as Record<string, string>;
+        list[idx].percentage = Math.round(
+          (Object.values(newProgress).filter((s) => s === "completed").length / 6) * 100
+        );
+        list[idx].interviewAnswers = {
+          ...list[idx].interviewAnswers,
+          targetAudience: newProfile.audience,
+          revenueModel: newProfile.pricing,
+        };
+        localStorage.setItem("cofoundr_startups", JSON.stringify(list));
+      }
+    }
   };
 
   // Reset interview
@@ -281,6 +325,19 @@ export function ChatInterface() {
     }
   };
 
+  const handleGenerationComplete = (outputs: Record<string, string>, workspaceData: WorkspaceData) => {
+    localStorage.setItem("cofoundr_workspace_outputs", JSON.stringify(outputs));
+    localStorage.setItem("cofoundr_workspace_data", JSON.stringify(workspaceData));
+
+    // Save back to active startup list
+    saveActiveStartupWorkspace(workspaceData, outputs);
+
+    setWorkspaceComplete(true);
+    setShowGenerationModal(false);
+
+    window.location.href = "/dashboard";
+  };
+
   // Helper to parse simple bold, lists, and code blocks
   const renderMarkdown = (text: string) => {
     if (!text) return null;
@@ -435,11 +492,7 @@ export function ChatInterface() {
                             }`}
                           >
                             {msg.content === "" && !isUser ? (
-                              <div className="flex items-center gap-1.5 py-1 px-1">
-                                <span className="size-2 animate-bounce rounded-full bg-slate-400" />
-                                <span className="size-2 animate-bounce rounded-full bg-slate-400 [animation-delay:0.2s]" />
-                                <span className="size-2 animate-bounce rounded-full bg-slate-400 [animation-delay:0.4s]" />
-                              </div>
+                              <ThinkingSteps />
                             ) : (
                               <div>{renderMarkdown(msg.content)}</div>
                             )}
@@ -471,30 +524,62 @@ export function ChatInterface() {
                     />
                   )}
 
-                  {/* Input form */}
-                  <form
-                    onSubmit={(e) => {
-                      e.preventDefault();
-                      handleSendMessage(inputValue);
-                    }}
-                    className="relative flex items-center"
-                  >
-                    <input
-                      type="text"
-                      value={inputValue}
-                      onChange={(e) => setInputValue(e.target.value)}
-                      placeholder="Type your response to the CEO..."
-                      disabled={isGenerating}
-                      className="w-full rounded-2xl border border-white/10 bg-slate-950/60 py-3.5 pl-4 pr-12 text-sm text-slate-200 placeholder:text-slate-500 focus:border-violet-500/80 focus:outline-none focus:ring-1 focus:ring-violet-500/80 disabled:opacity-50"
-                    />
-                    <button
-                      type="submit"
-                      disabled={!inputValue.trim() || isGenerating}
-                      className="absolute right-3 grid size-9 place-items-center rounded-xl bg-gradient-to-r from-blue-600 to-violet-600 text-white transition hover:-translate-y-0.5 disabled:pointer-events-none disabled:opacity-40"
+                  {/* Action or Input Area */}
+                  {percentage === 100 ? (
+                    <div className="flex flex-col sm:flex-row items-center justify-between gap-4 py-2.5 text-left bg-cyan-950/15 border border-cyan-500/10 p-4.5 rounded-2xl">
+                      <div>
+                        <h4 className="text-xs font-bold text-white uppercase tracking-wider">
+                          AI CEO Onboarding Alignment Complete!
+                        </h4>
+                        <p className="text-[10px] text-slate-400 font-semibold mt-1">
+                          {workspaceComplete 
+                            ? "Your startup workspace strategy is generated and synced."
+                            : "Your startup blueprint variables are locked. Launch orchestration agents."}
+                        </p>
+                      </div>
+                      {workspaceComplete ? (
+                        <Link
+                          href="/dashboard"
+                          className="rounded-xl bg-gradient-to-r from-blue-600 to-indigo-600 text-white px-6 py-2.5 text-xs font-extrabold shadow-md hover:-translate-y-0.5 transition flex items-center gap-1.5 shrink-0"
+                        >
+                          Go to Dashboard
+                          <ArrowRight className="size-4" />
+                        </Link>
+                      ) : (
+                        <button
+                          onClick={() => setShowGenerationModal(true)}
+                          className="rounded-xl bg-gradient-to-r from-blue-600 to-cyan-500 text-white px-6 py-2.5 text-xs font-extrabold shadow-md hover:-translate-y-0.5 transition flex items-center gap-1.5 shrink-0"
+                        >
+                          <Brain className="size-4 animate-pulse" />
+                          Generate Startup Strategy
+                        </button>
+                      )}
+                    </div>
+                  ) : (
+                    <form
+                      onSubmit={(e) => {
+                        e.preventDefault();
+                        handleSendMessage(inputValue);
+                      }}
+                      className="relative flex items-center"
                     >
-                      <Send className="size-4" />
-                    </button>
-                  </form>
+                      <input
+                        type="text"
+                        value={inputValue}
+                        onChange={(e) => setInputValue(e.target.value)}
+                        placeholder="Type your response to the CEO..."
+                        disabled={isGenerating}
+                        className="w-full rounded-2xl border border-white/10 bg-slate-950/60 py-3.5 pl-4 pr-12 text-sm text-slate-200 placeholder:text-slate-500 focus:border-violet-500/80 focus:outline-none focus:ring-1 focus:ring-violet-500/80 disabled:opacity-50"
+                      />
+                      <button
+                        type="submit"
+                        disabled={!inputValue.trim() || isGenerating}
+                        className="absolute right-3 grid size-9 place-items-center rounded-xl bg-gradient-to-r from-blue-600 to-violet-600 text-white transition hover:-translate-y-0.5 disabled:pointer-events-none disabled:opacity-40"
+                      >
+                        <Send className="size-4" />
+                      </button>
+                    </form>
+                  )}
                 </div>
               </div>
             </>
@@ -558,6 +643,13 @@ export function ChatInterface() {
           )}
         </AnimatePresence>
       </div>
+
+      {showGenerationModal && (
+        <GenerationModal
+          profile={profile}
+          onComplete={handleGenerationComplete}
+        />
+      )}
     </div>
   );
 }

@@ -40,7 +40,7 @@ export function Navbar() {
         </div>
 
         <div className="hidden sm:block">
-          <Link href="/dashboard"><Button size="sm">Get Started</Button></Link>
+          <Link href="/new-startup"><Button size="sm">Get Started</Button></Link>
         </div>
 
         <button
@@ -65,7 +65,7 @@ export function Navbar() {
                 {item.label}
               </Link>
             ))}
-            <Link href="/dashboard" onClick={closeMenu} className="mt-2 block"><Button className="w-full">Get Started</Button></Link>
+            <Link href="/new-startup" onClick={closeMenu} className="mt-2 block"><Button className="w-full">Get Started</Button></Link>
           </motion.div>
         )}
       </AnimatePresence>

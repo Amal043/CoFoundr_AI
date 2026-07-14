@@ -2,19 +2,14 @@
 
 import { useEffect, useState } from "react";
 import {
-  BarChart3,
   Bot,
-  Boxes,
   LayoutDashboard,
-  Megaphone,
   MessageSquare,
-  Search,
   Settings,
   Sparkles,
   ArrowRight,
   Clock3,
   CheckCircle2,
-  Lock,
   FileText,
   Presentation,
 } from "lucide-react";
@@ -23,7 +18,25 @@ import Link from "next/link";
 import { BrandMark } from "@/components/shared/brand-mark";
 import { Button } from "@/components/ui/button";
 import { preloadDemoStartup } from "@/lib/demo/preloader";
+import { listStartups, switchStartup, Startup } from "@/lib/demo/startup-manager";
 import { DashboardCharts } from "@/components/dashboard/charts";
+import { WarRoom } from "@/components/dashboard/war-room";
+import { AnalyticsCockpit } from "@/components/dashboard/analytics-cockpit";
+import { AgentInspector } from "@/components/dashboard/agent-inspector";
+import { ResearchAgent } from "@/lib/agents/research";
+import { FinanceAgent } from "@/lib/agents/finance";
+import { MarketingAgent } from "@/lib/agents/marketing";
+import { ProductAgent } from "@/lib/agents/product";
+import { CeoAgent } from "@/lib/agents/ceo";
+import { AgentConfig } from "@/lib/agents/types";
+
+const agentsMap: Record<string, AgentConfig> = {
+  research: ResearchAgent,
+  finance: FinanceAgent,
+  marketing: MarketingAgent,
+  product: ProductAgent,
+  ceo: CeoAgent,
+};
 
 interface ActivityItem {
   id: string;
@@ -38,6 +51,9 @@ export default function DashboardPage() {
   const [percentage, setPercentage] = useState(0); // Interview progress percent
   const [workspaceComplete, setWorkspaceComplete] = useState(false);
   const [activities, setActivities] = useState<ActivityItem[]>([]);
+  const [selectedAgentId, setSelectedAgentId] = useState<string | null>(null);
+  const [startups, setStartups] = useState<Startup[]>([]);
+  const [showProjectsDropdown, setShowProjectsDropdown] = useState(false);
 
   const handleTryDemo = () => {
     preloadDemoStartup();
@@ -73,69 +89,46 @@ export default function DashboardPage() {
     const logs: ActivityItem[] = [];
     const today = "Today";
 
-    if (hasOutputs) {
-      logs.push(
-        { id: "5", agent: "AI CEO", action: "Synthesized executive strategy & combined reports", time: `${today} at 2:32 PM` },
-        { id: "4", agent: "Marketing Agent", action: "Drafted go-to-market channels & acquisition plan", time: `${today} at 2:32 PM` },
-        { id: "3", agent: "Finance Agent", action: "Completed pricing matrix & 12-month MRR projections", time: `${today} at 2:31 PM` },
-        { id: "2", agent: "Product Agent", action: "Designed MVP feature scope & developer tech stack", time: `${today} at 2:31 PM` },
-        { id: "1", agent: "Research Agent", action: "Compiled market analysis & competitor SWOT matrices", time: `${today} at 2:30 PM` }
-      );
-    } else if (isInterviewComplete) {
-      logs.push(
-        { id: "2", agent: "AI CEO", action: "Onboarding interview complete. Blueprint locked.", time: `${today} at 2:15 PM` },
-        { id: "1", agent: "System", action: "Startup discovery profile initialized", time: `${today} at 2:02 PM` }
-      );
-    } else if (savedProgress) {
-      logs.push(
-        { id: "1", agent: "System", action: "Discovery interview initiated in boardroom", time: `${today} at 1:45 PM` }
-      );
-    } else {
-      logs.push(
-        { id: "0", agent: "System", action: "Workspace waiting for CEO initialization", time: `${today}` }
-      );
+    // Load actual workflow logs if they exist
+    const savedWorkflowLogs = localStorage.getItem("cofoundr_workflow_logs");
+    if (savedWorkflowLogs) {
+      try {
+        const parsed = JSON.parse(savedWorkflowLogs);
+        if (Array.isArray(parsed) && parsed.length > 0) {
+          logs.push(...parsed);
+        }
+      } catch (e) {
+        console.error("Failed to parse workflow logs:", e);
+      }
+    }
+
+    if (logs.length === 0) {
+      if (hasOutputs) {
+        logs.push(
+          { id: "5", agent: "AI CEO", action: "Synthesized executive strategy & combined reports", time: `${today} at 2:32 PM` },
+          { id: "4", agent: "Marketing Agent", action: "Drafted go-to-market channels & acquisition plan", time: `${today} at 2:32 PM` },
+          { id: "3", agent: "Finance Agent", action: "Completed pricing matrix & 12-month MRR projections", time: `${today} at 2:31 PM` },
+          { id: "2", agent: "Product Agent", action: "Designed MVP feature scope & developer tech stack", time: `${today} at 2:31 PM` },
+          { id: "1", agent: "Research Agent", action: "Compiled market analysis & competitor SWOT matrices", time: `${today} at 2:30 PM` }
+        );
+      } else if (isInterviewComplete) {
+        logs.push(
+          { id: "2", agent: "AI CEO", action: "Onboarding interview complete. Blueprint locked.", time: `${today} at 2:15 PM` },
+          { id: "1", agent: "System", action: "Startup discovery profile initialized", time: `${today} at 2:02 PM` }
+        );
+      } else if (savedProgress) {
+        logs.push(
+          { id: "1", agent: "System", action: "Discovery interview initiated in boardroom", time: `${today} at 1:45 PM` }
+        );
+      } else {
+        logs.push(
+          { id: "0", agent: "System", action: "Workspace waiting for CEO initialization", time: `${today}` }
+        );
+      }
     }
     setActivities(logs);
+    setStartups(listStartups());
   }, []);
-
-  const agents = [
-    {
-      name: "Research Agent",
-      desc: "Analyze market indicators, customer friction points, and competitive intelligence.",
-      icon: Search,
-      badgeColor: workspaceComplete
-        ? "text-emerald-300 bg-emerald-500/10 border-emerald-400/20"
-        : "text-slate-400 bg-slate-500/10 border-slate-400/10",
-      status: workspaceComplete ? "Complete" : "Orchestration Pending",
-    },
-    {
-      name: "Product Agent",
-      desc: "Scope feature backlogs, design MVP user journeys, and sequence product roadmap milestones.",
-      icon: Boxes,
-      badgeColor: workspaceComplete
-        ? "text-emerald-300 bg-emerald-500/10 border-emerald-400/20"
-        : "text-slate-400 bg-slate-500/10 border-slate-400/10",
-      status: workspaceComplete ? "Complete" : "Orchestration Pending",
-    },
-    {
-      name: "Finance Agent",
-      desc: "Structure pricing formulas, calculate revenue goals, and build an investor pitch narrative.",
-      icon: BarChart3,
-      badgeColor: workspaceComplete
-        ? "text-emerald-300 bg-emerald-500/10 border-emerald-400/20"
-        : "text-slate-400 bg-slate-500/10 border-slate-400/10",
-      status: workspaceComplete ? "Complete" : "Orchestration Pending",
-    },
-    {
-      name: "Marketing Agent",
-      desc: "Construct marketing strategies, GTM distribution, and brand engagement parameters.",
-      icon: Megaphone,
-      badgeColor: workspaceComplete
-        ? "text-emerald-300 bg-emerald-500/10 border-emerald-400/20"
-        : "text-slate-400 bg-slate-500/10 border-slate-400/10",
-      status: workspaceComplete ? "Complete" : "Orchestration Pending",
-    },
-  ];
 
   const overallProgress = workspaceComplete ? 100 : percentage > 0 ? Math.round(percentage * 0.5) : 0;
 
@@ -146,6 +139,47 @@ export default function DashboardPage() {
         <Link href="/">
           <BrandMark />
         </Link>
+
+        {/* Startup Switcher */}
+        <div className="mt-6 px-1 relative">
+          <label className="text-[8px] font-bold text-slate-500 uppercase tracking-widest block mb-1.5 pl-1 text-left">
+            Active Project
+          </label>
+          <div
+            onClick={() => setShowProjectsDropdown(!showProjectsDropdown)}
+            className="w-full rounded-xl border border-white/5 bg-white/[0.01] hover:bg-white/[0.03] px-3.5 py-2.5 text-xs font-semibold text-slate-200 cursor-pointer flex items-center justify-between transition"
+          >
+            <span className="truncate">{startupName !== "-" ? startupName : "Select Startup"}</span>
+            <span className="text-[10px] text-slate-500 font-bold ml-1.5">▼</span>
+          </div>
+
+          {showProjectsDropdown && (
+            <div className="absolute left-0 right-0 mt-1 z-40 rounded-xl border border-white/10 bg-slate-950 p-2 shadow-glow max-h-48 overflow-y-auto space-y-1">
+              {startups.map((s) => (
+                <div
+                  key={s.id}
+                  onClick={() => {
+                    switchStartup(s.id);
+                    window.location.reload();
+                  }}
+                  className={`rounded-lg px-2.5 py-1.5 text-xs font-medium cursor-pointer transition flex items-center justify-between text-left ${
+                    s.name === startupName 
+                      ? "bg-violet-600/20 border border-violet-500/30 text-violet-300"
+                      : "text-slate-300 hover:bg-white/5"
+                  }`}
+                >
+                  <span className="truncate">{s.name}</span>
+                  {s.workspaceData && <span className="text-[8px] font-bold text-emerald-400 uppercase">Strategy Ready</span>}
+                </div>
+              ))}
+              <Link href="/new-startup" className="block border-t border-white/5 pt-1.5 mt-1.5 text-left">
+                <div className="rounded-lg px-2.5 py-1.5 text-xs font-bold text-cyan-300 hover:bg-white/5 cursor-pointer transition text-center flex items-center justify-center gap-1">
+                  + New Startup
+                </div>
+              </Link>
+            </div>
+          )}
+        </div>
 
         <nav className="mt-8 flex-1 space-y-1">
           <Link
@@ -309,6 +343,11 @@ export default function DashboardPage() {
             </div>
           </section>
 
+          {/* Analytics Cockpit (Statistics, Health, Timeline, AI CEO Insight) */}
+          <div className="mt-8">
+            <AnalyticsCockpit workspaceComplete={workspaceComplete} />
+          </div>
+
           {/* SVG Analytics Charts (Only visible if workspace is complete) */}
           {workspaceComplete && (
             <section className="mt-12">
@@ -316,57 +355,10 @@ export default function DashboardPage() {
             </section>
           )}
 
-          {/* Active Modules Section */}
-          <section className="mt-12">
-            <div className="flex items-center justify-between">
-              <h3 className="text-lg font-bold text-white">AI Agency Modules</h3>
-              <span className="text-xs text-slate-500">
-                {workspaceComplete ? "All reports active" : "Unlock via Workspace orchestration"}
-              </span>
-            </div>
-
-            <div className="mt-6 grid gap-4 sm:grid-cols-2">
-              {agents.map((agent) => {
-                return (
-                  <div
-                    key={agent.name}
-                    className={`relative overflow-hidden rounded-2xl border p-5 shadow-card ${
-                      workspaceComplete
-                        ? "border-white/10 bg-[#080d20]/50"
-                        : "border-white/5 bg-[#080d20]/20 opacity-60"
-                    }`}
-                  >
-                    <div className="flex items-start justify-between">
-                      <div
-                        className={`grid size-10 place-items-center rounded-xl ${
-                          workspaceComplete ? "bg-emerald-500/10 text-emerald-300" : "bg-white/[0.02] text-slate-500"
-                        }`}
-                      >
-                        {workspaceComplete ? <CheckCircle2 className="size-4.5" /> : <Lock className="size-4" />}
-                      </div>
-                      <span
-                        className={`rounded-full border px-2.5 py-0.5 text-[9px] font-bold uppercase tracking-wider ${agent.badgeColor}`}
-                      >
-                        {agent.status}
-                      </span>
-                    </div>
-                    <div className="mt-5 flex items-center justify-between">
-                      <h4 className="text-sm font-bold text-slate-200">{agent.name}</h4>
-                      {workspaceComplete && (
-                        <Link
-                          href="/workspace"
-                          className="text-[10px] font-bold text-cyan-300 hover:text-white transition flex items-center gap-1"
-                        >
-                          View Report <ArrowRight className="size-3" />
-                        </Link>
-                      )}
-                    </div>
-                    <p className="mt-2 text-xs leading-5 text-slate-500">{agent.desc}</p>
-                  </div>
-                );
-              })}
-            </div>
-          </section>
+          {/* Active Modules Section (AI War Room Command Center) */}
+          <div className="mt-12">
+            <WarRoom workspaceComplete={workspaceComplete} onSelectAgent={(id) => setSelectedAgentId(id)} />
+          </div>
 
           {/* Recent Agent Activity Section */}
           <section className="mt-12 border-t border-white/[0.06] pt-10">
@@ -396,6 +388,12 @@ export default function DashboardPage() {
           </section>
         </div>
       </main>
+
+      <AgentInspector
+        agent={selectedAgentId ? agentsMap[selectedAgentId] : null}
+        onClose={() => setSelectedAgentId(null)}
+        workspaceComplete={workspaceComplete}
+      />
     </div>
   );
 }

@@ -12,6 +12,8 @@ import {
   CheckCircle2,
   AlertCircle,
   Menu,
+  RotateCcw,
+  Clock,
 } from "lucide-react";
 import Link from "next/link";
 import { motion, AnimatePresence } from "framer-motion";
@@ -25,7 +27,15 @@ import { FieldCard } from "@/components/workspace/editor/field-card";
 import { CanvasGrid } from "@/components/workspace/canvas/canvas-grid";
 import { Roadmap } from "@/components/workspace/timeline/roadmap";
 
-type SectionTab = "overview" | "research" | "product" | "finance" | "marketing" | "roadmap" | "canvas";
+// Phase 5 Decision Engine Imports
+import { EngineStatus } from "@/types/decision-engine";
+import { runWorkspaceDecisionEngine } from "@/lib/decision-engine/engine";
+import { getVersions, undoLastVersion, pushHistoryVersion } from "@/lib/decision-engine/history";
+import { ToastProvider, useToast } from "@/components/workspace/notifications/toast-provider";
+import { UpdatePanel } from "@/components/workspace/activity/update-panel";
+import { HistoryTab } from "@/components/workspace/history/history-tab";
+
+type SectionTab = "overview" | "research" | "product" | "finance" | "marketing" | "roadmap" | "canvas" | "history";
 
 interface SearchResult {
   section: SectionTab;
@@ -36,10 +46,29 @@ interface SearchResult {
 }
 
 export default function WorkspacePage() {
+  return (
+    <ToastProvider>
+      <WorkspaceContent />
+    </ToastProvider>
+  );
+}
+
+function WorkspaceContent() {
+  const { toast } = useToast();
   const [workspace, setWorkspace] = useState<WorkspaceData | null>(null);
   const [activeSection, setActiveSection] = useState<SectionTab>("overview");
   const [saveStatus, setSaveStatus] = useState<"idle" | "saving" | "saved">("idle");
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
+
+  // Phase 5 Decision Engine State
+  const [engineStatus, setEngineStatus] = useState<EngineStatus>({
+    state: "idle",
+    affectedAgents: [],
+    currentAgent: null,
+    completedAgents: [],
+    ceoMessage: null,
+  });
+  const [hasUndoBackup, setHasUndoBackup] = useState(false);
 
   // Search state
   const [searchQuery, setSearchQuery] = useState("");
@@ -54,7 +83,21 @@ export default function WorkspacePage() {
     const data = loadWorkspaceData();
     if (data) {
       setWorkspace(data);
+      // Initialize first version backup if stack is empty
+      const versions = getVersions();
+      if (versions.length === 0) {
+        pushHistoryVersion(data, "Baseline generated", [], [], "Initial blueprint approved by AI CEO.");
+      }
+      setHasUndoBackup(versions.length >= 2);
     }
+  }, []);
+
+  // Update undo availability periodically
+  useEffect(() => {
+    const interval = setInterval(() => {
+      setHasUndoBackup(getVersions().length >= 2);
+    }, 1000);
+    return () => clearInterval(interval);
   }, []);
 
   // Click outside search listener
@@ -68,13 +111,17 @@ export default function WorkspacePage() {
     return () => document.removeEventListener("mousedown", handleClickOutside);
   }, []);
 
-  // Handle field update and trigger autosave
-  const handleUpdateField = (section: keyof Omit<WorkspaceData, "roadmap" | "canvas">, field: string, newValue: string) => {
+  // Handle field update and trigger decision engine re-execution
+  const handleUpdateField = async (
+    section: keyof Omit<WorkspaceData, "roadmap" | "canvas">,
+    field: string,
+    newValue: string
+  ) => {
     if (!workspace) return;
 
     setSaveStatus("saving");
 
-    const updatedWorkspace = {
+    const tempWorkspace = {
       ...workspace,
       [section]: {
         ...workspace[section],
@@ -82,63 +129,165 @@ export default function WorkspacePage() {
       },
     };
 
-    setWorkspace(updatedWorkspace);
-    saveWorkspaceData(updatedWorkspace);
+    setWorkspace(tempWorkspace);
+    saveWorkspaceData(tempWorkspace);
 
-    // Dynamic save visual state transition
-    setTimeout(() => {
+    toast(`Change detected in ${field.replace(/([A-Z])/g, " $1")}. Running dependencies check...`, "info");
+
+    try {
+      const originalProfileStr = localStorage.getItem("cofoundr_chat_profile") || "{}";
+      const originalProfile = JSON.parse(originalProfileStr);
+      const rawOutputsStr = localStorage.getItem("cofoundr_workspace_outputs") || "{}";
+      const rawOutputs = JSON.parse(rawOutputsStr);
+
+      const result = await runWorkspaceDecisionEngine({
+        prevWorkspace: workspace,
+        currentWorkspace: tempWorkspace,
+        originalProfile,
+        rawOutputs,
+        onProgress: (status) => setEngineStatus(status),
+      });
+
+      if (result) {
+        setWorkspace(result.updatedWorkspace);
+        toast(`Decision Engine complete. ${result.summary}`, "success");
+      }
       setSaveStatus("saved");
-      setTimeout(() => setSaveStatus("idle"), 1500);
-    }, 600);
-  };
-
-  // Handle roadmap updates
-  const handleUpdateRoadmap = (id: string, newTask: string) => {
-    if (!workspace) return;
-
-    setSaveStatus("saving");
-
-    const updatedRoadmap = workspace.roadmap.map((node) =>
-      node.id === id ? { ...node, task: newTask } : node
-    );
-
-    const updatedWorkspace = {
-      ...workspace,
-      roadmap: updatedRoadmap,
-    };
-
-    setWorkspace(updatedWorkspace);
-    saveWorkspaceData(updatedWorkspace);
-
-    setTimeout(() => {
-      setSaveStatus("saved");
-      setTimeout(() => setSaveStatus("idle"), 1500);
-    }, 600);
+      setTimeout(() => {
+        setSaveStatus("idle");
+        setEngineStatus((prev) => ({ ...prev, state: "idle" }));
+      }, 1500);
+    } catch {
+      setSaveStatus("idle");
+      setEngineStatus((prev) => ({ ...prev, state: "idle" }));
+      toast("Decision engine execution aborted. Reverting field.", "error");
+      setWorkspace(workspace); // revert
+    }
   };
 
   // Handle Business Model Canvas edits
-  const handleUpdateCanvas = (field: keyof WorkspaceCanvas, newValue: string) => {
+  const handleUpdateCanvas = async (field: keyof WorkspaceCanvas, newValue: string) => {
     if (!workspace) return;
 
     setSaveStatus("saving");
 
-    const updatedCanvas = {
+    const tempCanvas = {
       ...workspace.canvas,
       [field]: newValue,
     };
 
-    const updatedWorkspace = {
+    const tempWorkspace = {
       ...workspace,
-      canvas: updatedCanvas,
+      canvas: tempCanvas,
     };
 
-    setWorkspace(updatedWorkspace);
-    saveWorkspaceData(updatedWorkspace);
+    setWorkspace(tempWorkspace);
+    saveWorkspaceData(tempWorkspace);
 
-    setTimeout(() => {
+    toast(`Change detected in Canvas ${field.replace(/([A-Z])/g, " $1")}. Running dependencies check...`, "info");
+
+    try {
+      const originalProfileStr = localStorage.getItem("cofoundr_chat_profile") || "{}";
+      const originalProfile = JSON.parse(originalProfileStr);
+      const rawOutputsStr = localStorage.getItem("cofoundr_workspace_outputs") || "{}";
+      const rawOutputs = JSON.parse(rawOutputsStr);
+
+      const result = await runWorkspaceDecisionEngine({
+        prevWorkspace: workspace,
+        currentWorkspace: tempWorkspace,
+        originalProfile,
+        rawOutputs,
+        onProgress: (status) => setEngineStatus(status),
+      });
+
+      if (result) {
+        setWorkspace(result.updatedWorkspace);
+        toast(`Decision Engine complete. ${result.summary}`, "success");
+      }
       setSaveStatus("saved");
-      setTimeout(() => setSaveStatus("idle"), 1500);
-    }, 600);
+      setTimeout(() => {
+        setSaveStatus("idle");
+        setEngineStatus((prev) => ({ ...prev, state: "idle" }));
+      }, 1500);
+    } catch {
+      setSaveStatus("idle");
+      setEngineStatus((prev) => ({ ...prev, state: "idle" }));
+      toast("Decision engine execution aborted. Reverting field.", "error");
+      setWorkspace(workspace); // revert
+    }
+  };
+
+  // Handle roadmap updates
+  const handleUpdateRoadmap = async (id: string, newTask: string) => {
+    if (!workspace) return;
+
+    setSaveStatus("saving");
+
+    const tempRoadmap = workspace.roadmap.map((node) =>
+      node.id === id ? { ...node, task: newTask } : node
+    );
+
+    const tempWorkspace = {
+      ...workspace,
+      roadmap: tempRoadmap,
+    };
+
+    setWorkspace(tempWorkspace);
+    saveWorkspaceData(tempWorkspace);
+
+    toast("Milestone updated. Running cohesion check...", "info");
+
+    try {
+      const originalProfileStr = localStorage.getItem("cofoundr_chat_profile") || "{}";
+      const originalProfile = JSON.parse(originalProfileStr);
+      const rawOutputsStr = localStorage.getItem("cofoundr_workspace_outputs") || "{}";
+      const rawOutputs = JSON.parse(rawOutputsStr);
+
+      const result = await runWorkspaceDecisionEngine({
+        prevWorkspace: workspace,
+        currentWorkspace: tempWorkspace,
+        originalProfile,
+        rawOutputs,
+        onProgress: (status) => setEngineStatus(status),
+      });
+
+      if (result) {
+        setWorkspace(result.updatedWorkspace);
+        toast(`Decision Engine complete. ${result.summary}`, "success");
+      }
+      setSaveStatus("saved");
+      setTimeout(() => {
+        setSaveStatus("idle");
+        setEngineStatus((prev) => ({ ...prev, state: "idle" }));
+      }, 1500);
+    } catch {
+      setSaveStatus("idle");
+      setEngineStatus((prev) => ({ ...prev, state: "idle" }));
+      toast("Decision engine execution aborted. Reverting field.", "error");
+      setWorkspace(workspace); // revert
+    }
+  };
+
+  // Rollback to specific history version
+  const handleRollbackToVersion = (versionId: string) => {
+    const versions = getVersions();
+    const targetVersion = versions.find((v) => v.id === versionId);
+    if (targetVersion) {
+      setWorkspace(targetVersion.workspaceData);
+      saveWorkspaceData(targetVersion.workspaceData);
+      toast("Workspace restored to selected history snapshot.", "success");
+    }
+  };
+
+  // Pop undo system
+  const handleUndo = () => {
+    const result = undoLastVersion();
+    if (result) {
+      setWorkspace(result.restoredData);
+      toast(`Restored previous version: undone "${result.undoneAction}"`, "success");
+    } else {
+      toast("No previous versions found in local history.", "warning");
+    }
   };
 
   // Search logic querying across all 32 workspace fields
@@ -248,24 +397,21 @@ export default function WorkspacePage() {
     setShowSearchDropdown(results.length > 0);
   };
 
-  // Jump to specific field result and highlight
   const handleSelectSearchResult = (result: SearchResult) => {
     setShowSearchDropdown(false);
     setSearchQuery("");
     setActiveSection(result.section);
 
-    // Small delay to allow tab render, then scroll & glow highlight
     setTimeout(() => {
       const element = document.getElementById(result.elementId);
       if (element) {
         element.scrollIntoView({ behavior: "smooth", block: "center" });
         setHighlightFieldId(result.elementId);
-        setTimeout(() => setHighlightFieldId(null), 3000); // Glow for 3 seconds
+        setTimeout(() => setHighlightFieldId(null), 3000);
       }
     }, 100);
   };
 
-  // Trigger phase 6 placeholder alerts
   const handleTriggerExportPlaceholder = (type: string) => {
     alert(`"${type}" export is a premium feature scheduled for Phase 6.`);
   };
@@ -278,6 +424,7 @@ export default function WorkspacePage() {
     { key: "marketing", label: "Marketing Channels" },
     { key: "roadmap", label: "Launch Roadmap" },
     { key: "canvas", label: "Business Model Canvas" },
+    { key: "history", label: "Change History" },
   ];
 
   if (!workspace) {
@@ -305,6 +452,9 @@ export default function WorkspacePage() {
 
   return (
     <div className="flex min-h-screen bg-ink">
+      {/* Update Timeline cockpit overlay */}
+      <UpdatePanel status={engineStatus} />
+
       {/* Navigation Sidebar (Desktop) */}
       <aside className="hidden w-64 shrink-0 border-r border-white/10 bg-[#070a19]/90 p-5 lg:flex lg:flex-col">
         <Link href="/">
@@ -350,7 +500,10 @@ export default function WorkspacePage() {
                   : "text-slate-400 hover:bg-white/[0.01] hover:text-white"
               }`}
             >
-              <span>{item.label}</span>
+              <span className="flex items-center gap-2">
+                {item.key === "history" && <Clock className="size-3.5 text-slate-500" />}
+                {item.label}
+              </span>
               {activeSection === item.key && (
                 <span className="size-1.5 rounded-full bg-cyan-300 shadow-[0_0_8px_#67e8f9]" />
               )}
@@ -369,12 +522,12 @@ export default function WorkspacePage() {
         </div>
       </aside>
 
-      {/* Main Workspace Frame */}
+      {/* Main Workspace Panel */}
       <main className="flex-1 overflow-y-auto px-4 py-6 sm:px-8 sm:py-8">
         <div className="mx-auto max-w-5xl">
-          {/* Top Actions Panel: Search, Autosave status, Exports */}
+          {/* Header Panel */}
           <div className="relative flex flex-col gap-4 border-b border-white/[0.06] pb-5 sm:flex-row sm:items-center sm:justify-between">
-            {/* Search Box */}
+            {/* Search index input */}
             <div ref={searchRef} className="relative w-full max-w-sm">
               <span className="absolute inset-y-0 left-3 grid place-items-center text-slate-500">
                 <Search className="size-4" />
@@ -387,7 +540,7 @@ export default function WorkspacePage() {
                 className="w-full rounded-xl border border-white/10 bg-slate-950/60 py-2.5 pl-9 pr-4 text-xs text-slate-300 placeholder:text-slate-500 focus:border-violet-500/80 focus:outline-none"
               />
 
-              {/* Search Dropdown */}
+              {/* Search dropdown suggestions */}
               <AnimatePresence>
                 {showSearchDropdown && searchResults.length > 0 && (
                   <motion.div
@@ -415,7 +568,7 @@ export default function WorkspacePage() {
               </AnimatePresence>
             </div>
 
-            {/* Autosave Status & Mobile menu triggers */}
+            {/* Actions: Undo, Autosave status, Exports */}
             <div className="flex items-center justify-between sm:justify-end gap-4 shrink-0">
               <button
                 onClick={() => setMobileMenuOpen((prev) => !prev)}
@@ -426,7 +579,18 @@ export default function WorkspacePage() {
               </button>
 
               <div className="flex items-center gap-4">
-                {/* Autosave Indicator */}
+                {/* Undo System button */}
+                {hasUndoBackup && (
+                  <button
+                    onClick={handleUndo}
+                    className="flex items-center gap-1.5 rounded-lg border border-amber-500/25 bg-amber-500/5 hover:bg-amber-500/10 px-3 py-1.5 text-[10px] font-bold text-amber-300 transition"
+                  >
+                    <RotateCcw className="size-3" />
+                    <span>Undo Last Edit</span>
+                  </button>
+                )}
+
+                {/* Autosave status indicator */}
                 <div className="w-20 text-center select-none">
                   {saveStatus === "saving" ? (
                     <span className="text-[10px] font-semibold text-slate-400 animate-pulse">
@@ -439,7 +603,7 @@ export default function WorkspacePage() {
                   ) : null}
                 </div>
 
-                {/* Export triggers */}
+                {/* Exports placeholders */}
                 <div className="flex items-center gap-2">
                   {["PDF", "Pitch Deck"].map((exp) => (
                     <button
@@ -459,7 +623,7 @@ export default function WorkspacePage() {
             </div>
           </div>
 
-          {/* Mobile Category Navigation Drawer */}
+          {/* Mobile Categories Navigation Drawer */}
           <AnimatePresence>
             {mobileMenuOpen && (
               <>
@@ -506,7 +670,7 @@ export default function WorkspacePage() {
             <Summary data={workspace} />
           </div>
 
-          {/* 4. MAIN EDITABLE VIEWS PANEL */}
+          {/* MAIN EDITABLE VIEWS PANEL */}
           <section className="mt-6 min-h-[500px] rounded-3xl border border-white/10 bg-[#070b19]/80 p-6 shadow-2xl backdrop-blur-xl sm:p-8">
             <AnimatePresence mode="wait">
               <motion.div
@@ -516,7 +680,7 @@ export default function WorkspacePage() {
                 exit={{ opacity: 0, y: -10 }}
                 transition={{ duration: 0.25 }}
               >
-                {/* 4.1 VIEW: Startup Overview */}
+                {/* VIEW: Startup Overview */}
                 {activeSection === "overview" && (
                   <div className="space-y-5">
                     <h2 className="text-xl font-bold text-white flex items-center gap-2 border-b border-white/5 pb-2.5">
@@ -599,7 +763,7 @@ export default function WorkspacePage() {
                   </div>
                 )}
 
-                {/* 4.2 VIEW: Research Section */}
+                {/* VIEW: Research Section */}
                 {activeSection === "research" && (
                   <div className="space-y-5">
                     <h2 className="text-xl font-bold text-white flex items-center gap-2 border-b border-white/5 pb-2.5">
@@ -660,7 +824,7 @@ export default function WorkspacePage() {
                   </div>
                 )}
 
-                {/* 4.3 VIEW: Product Section */}
+                {/* VIEW: Product Section */}
                 {activeSection === "product" && (
                   <div className="space-y-5">
                     <h2 className="text-xl font-bold text-white flex items-center gap-2 border-b border-white/5 pb-2.5">
@@ -706,7 +870,7 @@ export default function WorkspacePage() {
                   </div>
                 )}
 
-                {/* 4.4 VIEW: Finance Section */}
+                {/* VIEW: Finance Section */}
                 {activeSection === "finance" && (
                   <div className="space-y-5">
                     <h2 className="text-xl font-bold text-white flex items-center gap-2 border-b border-white/5 pb-2.5">
@@ -764,7 +928,7 @@ export default function WorkspacePage() {
                   </div>
                 )}
 
-                {/* 4.5 VIEW: Marketing Section */}
+                {/* VIEW: Marketing Section */}
                 {activeSection === "marketing" && (
                   <div className="space-y-5">
                     <h2 className="text-xl font-bold text-white flex items-center gap-2 border-b border-white/5 pb-2.5">
@@ -811,14 +975,19 @@ export default function WorkspacePage() {
                   </div>
                 )}
 
-                {/* 4.6 VIEW: Roadmap Timeline */}
+                {/* VIEW: Roadmap Timeline */}
                 {activeSection === "roadmap" && (
                   <Roadmap roadmap={workspace.roadmap} onSaveNode={handleUpdateRoadmap} />
                 )}
 
-                {/* 4.7 VIEW: Business Model Canvas */}
+                {/* VIEW: Business Model Canvas */}
                 {activeSection === "canvas" && (
                   <CanvasGrid canvas={workspace.canvas} onSaveField={handleUpdateCanvas} />
+                )}
+
+                {/* VIEW: Workspace History Logs */}
+                {activeSection === "history" && (
+                  <HistoryTab onRollback={handleRollbackToVersion} />
                 )}
               </motion.div>
             </AnimatePresence>

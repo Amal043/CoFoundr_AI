@@ -16,11 +16,14 @@ import {
   CheckCircle2,
   Lock,
   FileText,
+  Presentation,
 } from "lucide-react";
 import Link from "next/link";
 
 import { BrandMark } from "@/components/shared/brand-mark";
 import { Button } from "@/components/ui/button";
+import { preloadDemoStartup } from "@/lib/demo/preloader";
+import { DashboardCharts } from "@/components/dashboard/charts";
 
 interface ActivityItem {
   id: string;
@@ -35,6 +38,11 @@ export default function DashboardPage() {
   const [percentage, setPercentage] = useState(0); // Interview progress percent
   const [workspaceComplete, setWorkspaceComplete] = useState(false);
   const [activities, setActivities] = useState<ActivityItem[]>([]);
+
+  const handleTryDemo = () => {
+    preloadDemoStartup();
+    window.location.reload();
+  };
 
   // Load progress and workspace status from localStorage
   useEffect(() => {
@@ -167,6 +175,13 @@ export default function DashboardPage() {
               <span className="ml-auto size-2 rounded-full bg-emerald-400" />
             )}
           </Link>
+          <Link
+            href="/investor"
+            className="flex items-center gap-3 rounded-xl px-4 py-3 text-sm font-semibold text-slate-400 hover:bg-white/[0.02] hover:text-white transition"
+          >
+            <Presentation className="size-4.5" />
+            <span>Investor Package</span>
+          </Link>
         </nav>
 
         <div className="mt-auto border-t border-white/10 pt-4">
@@ -192,6 +207,11 @@ export default function DashboardPage() {
               </h1>
             </div>
             <div className="flex items-center gap-2.5">
+              {!workspaceComplete && (
+                <Button size="sm" variant="outline" className="border-cyan-500/30 text-cyan-300 hover:bg-cyan-500/10" onClick={handleTryDemo}>
+                  Try Demo Mode
+                </Button>
+              )}
               <Link href={workspaceComplete ? "/workspace" : "/chat"}>
                 <Button size="sm" variant={workspaceComplete ? "default" : "outline"}>
                   {workspaceComplete ? "Enter Workspace" : "CEO Chatroom"}
@@ -288,6 +308,13 @@ export default function DashboardPage() {
               </div>
             </div>
           </section>
+
+          {/* SVG Analytics Charts (Only visible if workspace is complete) */}
+          {workspaceComplete && (
+            <section className="mt-12">
+              <DashboardCharts />
+            </section>
+          )}
 
           {/* Active Modules Section */}
           <section className="mt-12">

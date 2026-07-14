@@ -6,8 +6,14 @@ import Link from "next/link";
 
 import { Button } from "@/components/ui/button";
 import { HeroIllustration } from "@/components/home/hero-illustration";
+import { preloadDemoStartup } from "@/lib/demo/preloader";
 
 export function Hero() {
+  const handleTryDemo = () => {
+    preloadDemoStartup();
+    window.location.href = "/dashboard";
+  };
+
   return (
     <section id="home" className="relative overflow-hidden pb-24 pt-36 sm:pb-32 sm:pt-44 lg:pb-40">
       <div className="absolute inset-0 -z-20 bg-hero-grid bg-[size:48px_48px] [mask-image:linear-gradient(to_bottom,black,transparent_78%)]" />
@@ -27,7 +33,9 @@ export function Hero() {
             </motion.p>
             <motion.div initial={{ opacity: 0, y: 16 }} animate={{ opacity: 1, y: 0 }} transition={{ duration: 0.6, delay: 0.24 }} className="mt-8 flex flex-col gap-3 sm:flex-row">
               <Link href="/dashboard"><Button size="lg" className="w-full sm:w-auto">Start Building <ArrowRight className="size-4" /></Button></Link>
-              <a href="#ceo" className="w-full sm:w-auto"><Button variant="outline" size="lg" className="w-full"><Play className="size-4 fill-current" /> View Demo</Button></a>
+              <Button variant="outline" size="lg" className="w-full sm:w-auto border-cyan-500/20 text-cyan-300 hover:bg-cyan-500/10" onClick={handleTryDemo}>
+                <Play className="size-4 fill-current text-cyan-300 mr-2" /> Try Demo Mode
+              </Button>
             </motion.div>
             <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} transition={{ duration: 0.7, delay: 0.45 }} className="mt-10 flex flex-wrap gap-x-5 gap-y-2 text-xs text-slate-400">
               {["Idea to investor-ready", "Always connected", "Built for momentum"].map((value) => <span key={value} className="flex items-center gap-1.5"><span className="size-1.5 rounded-full bg-cyan-300 shadow-[0_0_10px_#67e8f9]" />{value}</span>)}

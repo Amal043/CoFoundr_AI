@@ -2,446 +2,310 @@
 
 import { useEffect, useState, useRef } from "react";
 import {
-  AlertCircle,
-  ArrowRight,
-  BarChart3,
-  Bot,
-  Boxes,
-  ChevronDown,
-  ChevronUp,
-  FileText,
+  ArrowLeft,
   LayoutDashboard,
-  Megaphone,
   MessageSquare,
-  Play,
-  RefreshCw,
-  Search,
+  FileText,
   Settings,
-  Sparkles,
+  Search,
+  Download,
+  CheckCircle2,
+  AlertCircle,
+  Menu,
 } from "lucide-react";
 import Link from "next/link";
+import { motion, AnimatePresence } from "framer-motion";
 
 import { BrandMark } from "@/components/shared/brand-mark";
 import { Button } from "@/components/ui/button";
+import { WorkspaceData, WorkspaceCanvas } from "@/types/workspace";
+import { loadWorkspaceData, saveWorkspaceData } from "@/lib/workspace/storage/store";
+import { Summary } from "@/components/workspace/dashboard/summary";
+import { FieldCard } from "@/components/workspace/editor/field-card";
+import { CanvasGrid } from "@/components/workspace/canvas/canvas-grid";
+import { Roadmap } from "@/components/workspace/timeline/roadmap";
 
-interface StartupProfile {
-  name: string;
-  audience: string;
-  pricing: string;
-  country: string;
-  businessType: string;
-  timeline: string;
-  teamSize: string;
+type SectionTab = "overview" | "research" | "product" | "finance" | "marketing" | "roadmap" | "canvas";
+
+interface SearchResult {
+  section: SectionTab;
+  field: string;
+  label: string;
+  excerpt: string;
+  elementId: string;
 }
 
-type AgentKey = "research" | "product" | "finance" | "marketing" | "synthesis";
-
 export default function WorkspacePage() {
-  const [profile, setProfile] = useState<StartupProfile | null>(null);
-  const [completedCount, setCompletedCount] = useState(0);
+  const [workspace, setWorkspace] = useState<WorkspaceData | null>(null);
+  const [activeSection, setActiveSection] = useState<SectionTab>("overview");
+  const [saveStatus, setSaveStatus] = useState<"idle" | "saving" | "saved">("idle");
+  const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
 
-  // Orchestration state: 'idle' | 'running' | 'completed'
-  const [orchestrationState, setOrchestrationState] = useState<"idle" | "running" | "completed">("idle");
-  const [ceoLog, setCeoLog] = useState("AI CEO standing by. Awaiting launch command...");
-  
-  const [agentStatuses, setAgentStatuses] = useState<{ [key in AgentKey]: "pending" | "running" | "completed" | "failed" }>({
-    research: "pending",
-    product: "pending",
-    finance: "pending",
-    marketing: "pending",
-    synthesis: "pending",
-  });
+  // Search state
+  const [searchQuery, setSearchQuery] = useState("");
+  const [searchResults, setSearchResults] = useState<SearchResult[]>([]);
+  const [showSearchDropdown, setShowSearchDropdown] = useState(false);
+  const [highlightFieldId, setHighlightFieldId] = useState<string | null>(null);
 
-  const [agentTimers, setAgentTimers] = useState<{ [key in AgentKey]: number }>({
-    research: 0,
-    product: 0,
-    finance: 0,
-    marketing: 0,
-    synthesis: 0,
-  });
+  const searchRef = useRef<HTMLDivElement>(null);
 
-  const [agentOutputs, setAgentOutputs] = useState<{ [key: string]: string }>({
-    research: "",
-    product: "",
-    finance: "",
-    marketing: "",
-    synthesis: "",
-  });
-
-  const [expandedAgent, setExpandedAgent] = useState<string | null>(null);
-  const [activeTab, setActiveTab] = useState<string>("summary");
-
-  // Timer intervals references
-  const timerRefs = useRef<{ [key in AgentKey]?: NodeJS.Timeout }>({});
-
-  // Load profile and saved workspace outputs from localStorage on mount
+  // Load store data on mount
   useEffect(() => {
-    const savedProfile = localStorage.getItem("cofoundr_chat_profile");
-    const savedProgress = localStorage.getItem("cofoundr_chat_progress");
-    const savedOutputs = localStorage.getItem("cofoundr_workspace_outputs");
-
-    if (savedProfile) {
-      setProfile(JSON.parse(savedProfile));
-    }
-
-    if (savedProgress) {
-      const parsed = JSON.parse(savedProgress);
-      const count = Object.values(parsed).filter((v) => v === "completed").length;
-      setCompletedCount(count);
-    }
-
-    if (savedOutputs) {
-      const parsed = JSON.parse(savedOutputs);
-      setAgentOutputs(parsed);
-      setOrchestrationState("completed");
+    const data = loadWorkspaceData();
+    if (data) {
+      setWorkspace(data);
     }
   }, []);
 
-  // Cleanup timers on unmount
+  // Click outside search listener
   useEffect(() => {
-    const currentTimers = timerRefs.current;
-    return () => {
-      Object.values(currentTimers).forEach((interval) => {
-        if (interval) clearInterval(interval);
-      });
+    function handleClickOutside(event: MouseEvent) {
+      if (searchRef.current && !searchRef.current.contains(event.target as Node)) {
+        setShowSearchDropdown(false);
+      }
+    }
+    document.addEventListener("mousedown", handleClickOutside);
+    return () => document.removeEventListener("mousedown", handleClickOutside);
+  }, []);
+
+  // Handle field update and trigger autosave
+  const handleUpdateField = (section: keyof Omit<WorkspaceData, "roadmap" | "canvas">, field: string, newValue: string) => {
+    if (!workspace) return;
+
+    setSaveStatus("saving");
+
+    const updatedWorkspace = {
+      ...workspace,
+      [section]: {
+        ...workspace[section],
+        [field]: newValue,
+      },
     };
-  }, []);
 
-  // Start timer for a specific agent
-  const startTimer = (agent: AgentKey) => {
-    // Reset timer
-    setAgentTimers((prev) => ({ ...prev, [agent]: 0 }));
-    
-    // Clear existing timer if any
-    if (timerRefs.current[agent]) {
-      clearInterval(timerRefs.current[agent]);
+    setWorkspace(updatedWorkspace);
+    saveWorkspaceData(updatedWorkspace);
+
+    // Dynamic save visual state transition
+    setTimeout(() => {
+      setSaveStatus("saved");
+      setTimeout(() => setSaveStatus("idle"), 1500);
+    }, 600);
+  };
+
+  // Handle roadmap updates
+  const handleUpdateRoadmap = (id: string, newTask: string) => {
+    if (!workspace) return;
+
+    setSaveStatus("saving");
+
+    const updatedRoadmap = workspace.roadmap.map((node) =>
+      node.id === id ? { ...node, task: newTask } : node
+    );
+
+    const updatedWorkspace = {
+      ...workspace,
+      roadmap: updatedRoadmap,
+    };
+
+    setWorkspace(updatedWorkspace);
+    saveWorkspaceData(updatedWorkspace);
+
+    setTimeout(() => {
+      setSaveStatus("saved");
+      setTimeout(() => setSaveStatus("idle"), 1500);
+    }, 600);
+  };
+
+  // Handle Business Model Canvas edits
+  const handleUpdateCanvas = (field: keyof WorkspaceCanvas, newValue: string) => {
+    if (!workspace) return;
+
+    setSaveStatus("saving");
+
+    const updatedCanvas = {
+      ...workspace.canvas,
+      [field]: newValue,
+    };
+
+    const updatedWorkspace = {
+      ...workspace,
+      canvas: updatedCanvas,
+    };
+
+    setWorkspace(updatedWorkspace);
+    saveWorkspaceData(updatedWorkspace);
+
+    setTimeout(() => {
+      setSaveStatus("saved");
+      setTimeout(() => setSaveStatus("idle"), 1500);
+    }, 600);
+  };
+
+  // Search logic querying across all 32 workspace fields
+  const handleSearch = (query: string) => {
+    setSearchQuery(query);
+    if (!workspace || query.trim() === "") {
+      setSearchResults([]);
+      setShowSearchDropdown(false);
+      return;
     }
 
-    // Start interval
-    timerRefs.current[agent] = setInterval(() => {
-      setAgentTimers((prev) => ({ ...prev, [agent]: +(prev[agent] + 0.1).toFixed(1) }));
+    const results: SearchResult[] = [];
+    const lowerQuery = query.toLowerCase();
+
+    // 1. Search Overview Section
+    Object.entries(workspace.overview).forEach(([field, val]) => {
+      if (val.toLowerCase().includes(lowerQuery) || field.toLowerCase().includes(lowerQuery)) {
+        results.push({
+          section: "overview",
+          field,
+          label: `Overview > ${field.replace(/([A-Z])/g, " $1")}`,
+          excerpt: val.length > 50 ? `${val.substring(0, 50)}...` : val,
+          elementId: `overview-${field}`,
+        });
+      }
+    });
+
+    // 2. Search Research Section
+    Object.entries(workspace.research).forEach(([field, val]) => {
+      if (val.toLowerCase().includes(lowerQuery) || field.toLowerCase().includes(lowerQuery)) {
+        results.push({
+          section: "research",
+          field,
+          label: `Research > ${field.replace(/([A-Z])/g, " $1")}`,
+          excerpt: val.length > 50 ? `${val.substring(0, 50)}...` : val,
+          elementId: `research-${field}`,
+        });
+      }
+    });
+
+    // 3. Search Product Section
+    Object.entries(workspace.product).forEach(([field, val]) => {
+      if (val.toLowerCase().includes(lowerQuery) || field.toLowerCase().includes(lowerQuery)) {
+        results.push({
+          section: "product",
+          field,
+          label: `Product > ${field.replace(/([A-Z])/g, " $1")}`,
+          excerpt: val.length > 50 ? `${val.substring(0, 50)}...` : val,
+          elementId: `product-${field}`,
+        });
+      }
+    });
+
+    // 4. Search Finance Section
+    Object.entries(workspace.finance).forEach(([field, val]) => {
+      if (val.toLowerCase().includes(lowerQuery) || field.toLowerCase().includes(lowerQuery)) {
+        results.push({
+          section: "finance",
+          field,
+          label: `Finance > ${field.replace(/([A-Z])/g, " $1")}`,
+          excerpt: val.length > 50 ? `${val.substring(0, 50)}...` : val,
+          elementId: `finance-${field}`,
+        });
+      }
+    });
+
+    // 5. Search Marketing Section
+    Object.entries(workspace.marketing).forEach(([field, val]) => {
+      if (val.toLowerCase().includes(lowerQuery) || field.toLowerCase().includes(lowerQuery)) {
+        results.push({
+          section: "marketing",
+          field,
+          label: `Marketing > ${field.replace(/([A-Z])/g, " $1")}`,
+          excerpt: val.length > 50 ? `${val.substring(0, 50)}...` : val,
+          elementId: `marketing-${field}`,
+        });
+      }
+    });
+
+    // 6. Search Canvas
+    Object.entries(workspace.canvas).forEach(([field, val]) => {
+      if (val.toLowerCase().includes(lowerQuery) || field.toLowerCase().includes(lowerQuery)) {
+        results.push({
+          section: "canvas",
+          field,
+          label: `BMC > ${field.replace(/([A-Z])/g, " $1")}`,
+          excerpt: val.length > 50 ? `${val.substring(0, 50)}...` : val,
+          elementId: `canvas-${field}`,
+        });
+      }
+    });
+
+    // 7. Search Roadmap Nodes
+    workspace.roadmap.forEach((node) => {
+      if (node.task.toLowerCase().includes(lowerQuery) || node.week.toLowerCase().includes(lowerQuery)) {
+        results.push({
+          section: "roadmap",
+          field: node.week,
+          label: `Roadmap > ${node.week}`,
+          excerpt: node.task.length > 50 ? `${node.task.substring(0, 50)}...` : node.task,
+          elementId: `roadmap-${node.id}`,
+        });
+      }
+    });
+
+    setSearchResults(results.slice(0, 5)); // Limit to top 5 results
+    setShowSearchDropdown(results.length > 0);
+  };
+
+  // Jump to specific field result and highlight
+  const handleSelectSearchResult = (result: SearchResult) => {
+    setShowSearchDropdown(false);
+    setSearchQuery("");
+    setActiveSection(result.section);
+
+    // Small delay to allow tab render, then scroll & glow highlight
+    setTimeout(() => {
+      const element = document.getElementById(result.elementId);
+      if (element) {
+        element.scrollIntoView({ behavior: "smooth", block: "center" });
+        setHighlightFieldId(result.elementId);
+        setTimeout(() => setHighlightFieldId(null), 3000); // Glow for 3 seconds
+      }
     }, 100);
   };
 
-  // Stop timer for a specific agent
-  const stopTimer = (agent: AgentKey) => {
-    if (timerRefs.current[agent]) {
-      clearInterval(timerRefs.current[agent]);
-    }
+  // Trigger phase 6 placeholder alerts
+  const handleTriggerExportPlaceholder = (type: string) => {
+    alert(`"${type}" export is a premium feature scheduled for Phase 6.`);
   };
 
-  // Run a single agent request
-  const executeAgent = async (
-    agent: AgentKey,
-    endpoint: string,
-    body: { profile: StartupProfile; outputs?: Record<string, string> }
-  ): Promise<string> => {
-    setAgentStatuses((prev) => ({ ...prev, [agent]: "running" }));
-    startTimer(agent);
-
-    try {
-      const response = await fetch(endpoint, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(body),
-      });
-
-      if (!response.ok) {
-        throw new Error(`Agent execution failed with status: ${response.status}`);
-      }
-
-      const data = await response.json();
-      if (data.error) throw new Error(data.error);
-
-      setAgentStatuses((prev) => ({ ...prev, [agent]: "completed" }));
-      stopTimer(agent);
-      
-      return data.output || "";
-    } catch (err) {
-      setAgentStatuses((prev) => ({ ...prev, [agent]: "failed" }));
-      stopTimer(agent);
-      throw err;
-    }
-  };
-
-  // Run the full orchestration pipeline
-  const runOrchestrator = async () => {
-    if (!profile) return;
-    setOrchestrationState("running");
-
-    const outputs = { ...agentOutputs };
-
-    // Step 1: Research Agent
-    if (agentStatuses.research !== "completed") {
-      try {
-        setCeoLog("AI CEO: Launching Research Agent to analyze market indicators and direct competitors...");
-        const res = await executeAgent("research", "/api/agents/research", { profile });
-        outputs.research = res;
-        setAgentOutputs((prev) => ({ ...prev, research: res }));
-      } catch {
-        setCeoLog("AI CEO ERROR: The Research Agent encountered an error. Please retry to continue.");
-        return;
-      }
-    }
-
-    // Step 2: Product Agent
-    if (agentStatuses.product !== "completed") {
-      try {
-        setCeoLog("AI CEO: Research complete. Running Product Agent to define the MVP scope and tech stack...");
-        const res = await executeAgent("product", "/api/agents/product", { profile });
-        outputs.product = res;
-        setAgentOutputs((prev) => ({ ...prev, product: res }));
-      } catch {
-        setCeoLog("AI CEO ERROR: The Product Agent encountered an error. Please retry to continue.");
-        return;
-      }
-    }
-
-    // Step 3: Finance Agent
-    if (agentStatuses.finance !== "completed") {
-      try {
-        setCeoLog("AI CEO: Product roadmap mapped. Dispatching Finance Agent to model pricing and budget forecast...");
-        const res = await executeAgent("finance", "/api/agents/finance", { profile });
-        outputs.finance = res;
-        setAgentOutputs((prev) => ({ ...prev, finance: res }));
-      } catch {
-        setCeoLog("AI CEO ERROR: The Finance Agent encountered an error. Please retry to continue.");
-        return;
-      }
-    }
-
-    // Step 4: Marketing Agent
-    if (agentStatuses.marketing !== "completed") {
-      try {
-        setCeoLog("AI CEO: Financial parameters calculated. Running Marketing Agent to frame customer acquisition channels...");
-        const res = await executeAgent("marketing", "/api/agents/marketing", { profile });
-        outputs.marketing = res;
-        setAgentOutputs((prev) => ({ ...prev, marketing: res }));
-      } catch {
-        setCeoLog("AI CEO ERROR: The Marketing Agent encountered an error. Please retry to continue.");
-        return;
-      }
-    }
-
-    // Step 5: CEO Synthesis
-    if (agentStatuses.synthesis !== "completed") {
-      try {
-        setCeoLog("AI CEO: Specialized agent reports compiled. Initiating synthesis to remove contradictions and build the Executive Summary...");
-        const res = await executeAgent("synthesis", "/api/agents/synthesis", { profile, outputs });
-        outputs.synthesis = res;
-        setAgentOutputs((prev) => ({ ...prev, synthesis: res }));
-      } catch {
-        setCeoLog("AI CEO ERROR: Core synthesis failed. Click retry to complete the workspace.");
-        return;
-      }
-    }
-
-    setCeoLog("AI CEO: Orchestration complete. Workspace strategy is compiled and ready!");
-    setOrchestrationState("completed");
-
-    // Save final reports to localStorage
-    localStorage.setItem("cofoundr_workspace_outputs", JSON.stringify(outputs));
-  };
-
-  // Retry logic for a specific failed agent
-  const handleRetryAgent = async (agent: AgentKey) => {
-    if (!profile) return;
-    setCeoLog(`AI CEO: Retrying the ${agent.charAt(0).toUpperCase() + agent.slice(1)} Agent...`);
-
-    const outputs = { ...agentOutputs };
-
-    try {
-      if (agent === "research") {
-        const res = await executeAgent("research", "/api/agents/research", { profile });
-        outputs.research = res;
-        setAgentOutputs((prev) => ({ ...prev, research: res }));
-      } else if (agent === "product") {
-        const res = await executeAgent("product", "/api/agents/product", { profile });
-        outputs.product = res;
-        setAgentOutputs((prev) => ({ ...prev, product: res }));
-      } else if (agent === "finance") {
-        const res = await executeAgent("finance", "/api/agents/finance", { profile });
-        outputs.finance = res;
-        setAgentOutputs((prev) => ({ ...prev, finance: res }));
-      } else if (agent === "marketing") {
-        const res = await executeAgent("marketing", "/api/agents/marketing", { profile });
-        outputs.marketing = res;
-        setAgentOutputs((prev) => ({ ...prev, marketing: res }));
-      } else if (agent === "synthesis") {
-        const res = await executeAgent("synthesis", "/api/agents/synthesis", { profile, outputs: agentOutputs });
-        outputs.synthesis = res;
-        setAgentOutputs((prev) => ({ ...prev, synthesis: res }));
-      }
-
-      // Resume pipeline
-      await runOrchestrator();
-    } catch {
-      setCeoLog(`AI CEO ERROR: ${agent.charAt(0).toUpperCase() + agent.slice(1)} Agent failed again. Check connection.`);
-    }
-  };
-
-  // Helper to extract specific headers from Markdown
-  const extractMarkdownSection = (md: string, heading: string): string => {
-    if (!md) return "";
-    const lines = md.split("\n");
-    const result: string[] = [];
-    let capture = false;
-
-    for (const line of lines) {
-      const cleanLine = line.trim();
-      // Start capturing if line is a header and matches our heading key
-      if (cleanLine.startsWith("#") && cleanLine.toLowerCase().includes(heading.toLowerCase())) {
-        capture = true;
-        result.push(line);
-        continue;
-      }
-      // Stop capturing if we hit another header of the same or higher weight
-      if (capture && cleanLine.startsWith("#")) {
-        break;
-      }
-      if (capture) {
-        result.push(line);
-      }
-    }
-
-    // Fallback if section header not found
-    return result.length > 0 ? result.join("\n").trim() : md;
-  };
-
-  // Format markdown helper
-  const renderMarkdown = (text: string) => {
-    if (!text) return null;
-    const blocks = text.split("```");
-    return blocks.map((block, index) => {
-      if (index % 2 === 1) {
-        const lines = block.split("\n");
-        const code = lines.slice(1).join("\n").trim();
-        return (
-          <pre
-            key={index}
-            className="my-4 overflow-x-auto rounded-xl border border-white/10 bg-[#04060f] p-4 text-xs font-mono text-cyan-300"
-          >
-            <code>{code || block}</code>
-          </pre>
-        );
-      }
-
-      const lines = block.split("\n");
-      return lines.map((line, lineIndex) => {
-        const trimmed = line.trim();
-        
-        // Handle markdown main headers
-        if (trimmed.startsWith("# ")) {
-          return (
-            <h2 key={`${index}-${lineIndex}`} className="mt-8 mb-4 text-xl font-bold tracking-tight text-white border-b border-white/5 pb-2">
-              {renderBold(trimmed.replace(/^#\s+/, ""))}
-            </h2>
-          );
-        }
-        if (trimmed.startsWith("## ")) {
-          return (
-            <h3 key={`${index}-${lineIndex}`} className="mt-6 mb-3 text-base font-bold tracking-tight text-cyan-300">
-              {renderBold(trimmed.replace(/^##\s+/, ""))}
-            </h3>
-          );
-        }
-
-        // Handle bullet points
-        if (trimmed.startsWith("- ") || trimmed.startsWith("* ")) {
-          const content = trimmed.replace(/^[-*]\s+/, "");
-          return (
-            <li key={`${index}-${lineIndex}`} className="ml-4 list-disc text-sm text-slate-300 mb-2">
-              {renderBold(content)}
-            </li>
-          );
-        }
-
-        return (
-          <p key={`${index}-${lineIndex}`} className="text-sm text-slate-300 leading-7 mb-3.5 min-h-[1.2rem]">
-            {renderBold(line)}
-          </p>
-        );
-      });
-    });
-  };
-
-  const renderBold = (text: string) => {
-    const parts = text.split(/\*\*([^*]+)\*\*/g);
-    return parts.map((part, idx) => {
-      if (idx % 2 === 1) {
-        return (
-          <strong key={idx} className="font-bold text-white">
-            {part}
-          </strong>
-        );
-      }
-      return part;
-    });
-  };
-
-  // Get active tab content
-  const getTabContent = () => {
-    switch (activeTab) {
-      case "summary":
-        return agentOutputs.synthesis;
-      case "market":
-        return extractMarkdownSection(agentOutputs.research, "Market Summary");
-      case "competitors":
-        return extractMarkdownSection(agentOutputs.research, "Competitor Analysis") + "\n\n" + extractMarkdownSection(agentOutputs.research, "SWOT");
-      case "business":
-        return extractMarkdownSection(agentOutputs.finance, "Pricing Strategy") + "\n\n" + extractMarkdownSection(agentOutputs.finance, "Financial Summary");
-      case "revenue":
-        return extractMarkdownSection(agentOutputs.finance, "Revenue Projection") + "\n\n" + extractMarkdownSection(agentOutputs.finance, "Funding Need");
-      case "product":
-        return agentOutputs.product;
-      case "marketing":
-        return agentOutputs.marketing;
-      default:
-        return "";
-    }
-  };
-
-  // Calculate overall orchestration progress percentage
-  const getOrchestrationPercent = () => {
-    const statuses = Object.values(agentStatuses);
-    const complete = statuses.filter((v) => v === "completed").length;
-    return Math.round((complete / statuses.length) * 100);
-  };
-
-  const agentCards = [
-    {
-      key: "research",
-      name: "Research Agent",
-      desc: "Market summary, demand, and SWOT",
-      icon: Search,
-      output: agentOutputs.research,
-    },
-    {
-      key: "product",
-      name: "Product Agent",
-      desc: "MVP features, roadmap, and stack",
-      icon: Boxes,
-      output: agentOutputs.product,
-    },
-    {
-      key: "finance",
-      name: "Finance Agent",
-      desc: "Pricing, margins, and cost modeling",
-      icon: BarChart3,
-      output: agentOutputs.finance,
-    },
-    {
-      key: "marketing",
-      name: "Marketing Agent",
-      desc: "Go-to-market channels and campaigns",
-      icon: Megaphone,
-      output: agentOutputs.marketing,
-    },
+  const navItems = [
+    { key: "overview", label: "Startup Overview" },
+    { key: "research", label: "Research Report" },
+    { key: "product", label: "Product MVP Strategy" },
+    { key: "finance", label: "Financial Modeling" },
+    { key: "marketing", label: "Marketing Channels" },
+    { key: "roadmap", label: "Launch Roadmap" },
+    { key: "canvas", label: "Business Model Canvas" },
   ];
+
+  if (!workspace) {
+    return (
+      <div className="grid min-h-screen place-items-center bg-ink px-5">
+        <div className="absolute inset-0 bg-[radial-gradient(circle_at_50%_35%,rgba(86,77,255,0.18),transparent_32rem)]" />
+        <section className="relative w-full max-w-md rounded-3xl border border-white/10 bg-[#0c1020]/80 p-8 text-center shadow-2xl backdrop-blur-xl">
+          <BrandMark className="justify-center" />
+          <span className="mx-auto mt-10 grid size-14 place-items-center rounded-2xl bg-cyan-400/10 text-cyan-300 ring-1 ring-cyan-400/25">
+            <AlertCircle className="size-6" />
+          </span>
+          <h1 className="mt-6 text-xl font-bold tracking-tight text-white">Startup Blueprint Not Found</h1>
+          <p className="mt-3 text-xs leading-6 text-slate-400">
+            You must complete the onboarding discovery interview with the AI CEO to generate your startup workspace profile.
+          </p>
+          <Link href="/chat" className="mt-6 inline-block">
+            <Button>
+              Enter Boardroom Chat <ArrowLeft className="size-4" />
+            </Button>
+          </Link>
+        </section>
+      </div>
+    );
+  }
 
   return (
     <div className="flex min-h-screen bg-ink">
-      {/* Navigation Sidebar */}
+      {/* Navigation Sidebar (Desktop) */}
       <aside className="hidden w-64 shrink-0 border-r border-white/10 bg-[#070a19]/90 p-5 lg:flex lg:flex-col">
         <Link href="/">
           <BrandMark />
@@ -469,6 +333,29 @@ export default function WorkspacePage() {
             <FileText className="size-4.5 text-cyan-300" />
             <span>Workspace</span>
           </Link>
+
+          <div className="pt-6 pb-2 border-t border-white/5 mt-4">
+            <span className="px-4 text-[9px] font-bold uppercase tracking-wider text-slate-600">
+              Workspace Sections
+            </span>
+          </div>
+
+          {navItems.map((item) => (
+            <button
+              key={item.key}
+              onClick={() => setActiveSection(item.key as SectionTab)}
+              className={`w-full flex items-center justify-between rounded-xl px-4 py-2.5 text-left text-xs font-semibold transition ${
+                activeSection === item.key
+                  ? "bg-gradient-to-r from-blue-600/10 to-violet-600/10 text-cyan-300 ring-1 ring-cyan-400/20"
+                  : "text-slate-400 hover:bg-white/[0.01] hover:text-white"
+              }`}
+            >
+              <span>{item.label}</span>
+              {activeSection === item.key && (
+                <span className="size-1.5 rounded-full bg-cyan-300 shadow-[0_0_8px_#67e8f9]" />
+              )}
+            </button>
+          ))}
         </nav>
 
         <div className="mt-auto border-t border-white/10 pt-4">
@@ -485,342 +372,457 @@ export default function WorkspacePage() {
       {/* Main Workspace Frame */}
       <main className="flex-1 overflow-y-auto px-4 py-6 sm:px-8 sm:py-8">
         <div className="mx-auto max-w-5xl">
-          {/* Header */}
-          <header className="flex items-center justify-between border-b border-white/[0.06] pb-5">
-            <div>
-              <p className="text-xs font-semibold text-slate-500">Boardroom Synthesis</p>
-              <h1 className="mt-1 text-2xl font-bold tracking-tight text-white">
-                {profile?.name && profile.name !== "-" ? `${profile.name} Workspace` : "Startup Workspace"}
-              </h1>
+          {/* Top Actions Panel: Search, Autosave status, Exports */}
+          <div className="relative flex flex-col gap-4 border-b border-white/[0.06] pb-5 sm:flex-row sm:items-center sm:justify-between">
+            {/* Search Box */}
+            <div ref={searchRef} className="relative w-full max-w-sm">
+              <span className="absolute inset-y-0 left-3 grid place-items-center text-slate-500">
+                <Search className="size-4" />
+              </span>
+              <input
+                type="text"
+                value={searchQuery}
+                onChange={(e) => handleSearch(e.target.value)}
+                placeholder="Search workspace (e.g. pricing, SWOT)..."
+                className="w-full rounded-xl border border-white/10 bg-slate-950/60 py-2.5 pl-9 pr-4 text-xs text-slate-300 placeholder:text-slate-500 focus:border-violet-500/80 focus:outline-none"
+              />
+
+              {/* Search Dropdown */}
+              <AnimatePresence>
+                {showSearchDropdown && searchResults.length > 0 && (
+                  <motion.div
+                    initial={{ opacity: 0, y: 5 }}
+                    animate={{ opacity: 1, y: 0 }}
+                    exit={{ opacity: 0, y: 5 }}
+                    className="absolute inset-x-0 top-12 z-50 rounded-xl border border-white/10 bg-[#0b1022] p-2.5 shadow-2xl backdrop-blur-xl"
+                  >
+                    {searchResults.map((res, index) => (
+                      <button
+                        key={`${res.elementId}-${index}`}
+                        onClick={() => handleSelectSearchResult(res)}
+                        className="w-full flex flex-col items-start rounded-lg p-2 text-left hover:bg-white/5 transition"
+                      >
+                        <span className="text-[9px] font-bold uppercase tracking-wider text-cyan-300">
+                          {res.label}
+                        </span>
+                        <span className="mt-0.5 text-xs text-slate-400 truncate w-full">
+                          {res.excerpt}
+                        </span>
+                      </button>
+                    ))}
+                  </motion.div>
+                )}
+              </AnimatePresence>
             </div>
-            {orchestrationState === "completed" && (
+
+            {/* Autosave Status & Mobile menu triggers */}
+            <div className="flex items-center justify-between sm:justify-end gap-4 shrink-0">
               <button
-                onClick={() => {
-                  if (confirm("Do you want to re-run the agent boardroom orchestration?")) {
-                    localStorage.removeItem("cofoundr_workspace_outputs");
-                    setOrchestrationState("idle");
-                    setAgentStatuses({
-                      research: "pending",
-                      product: "pending",
-                      finance: "pending",
-                      marketing: "pending",
-                      synthesis: "pending",
-                    });
-                    setAgentOutputs({ research: "", product: "", finance: "", marketing: "", synthesis: "" });
-                  }
-                }}
-                className="flex items-center gap-1.5 rounded-lg border border-white/10 bg-white/[0.02] px-3 py-1.5 text-xs text-slate-400 hover:text-white transition"
+                onClick={() => setMobileMenuOpen((prev) => !prev)}
+                className="grid size-9 place-items-center rounded-xl border border-white/10 bg-white/[0.02] text-slate-400 hover:text-white transition lg:hidden"
+                aria-label="Toggle Navigation Categories"
               >
-                <RefreshCw className="size-3.5" /> Re-run Orchestrator
+                <Menu className="size-4.5" />
               </button>
-            )}
-          </header>
 
-          {/* 1. STATE: Idle - Launch Dashboard */}
-          {orchestrationState === "idle" && (
-            <div className="mt-8 rounded-3xl border border-white/10 bg-[#070b19]/60 p-6 text-center shadow-xl sm:p-12">
-              <div className="mx-auto grid size-16 place-items-center rounded-2xl bg-violet-500/10 text-violet-300 ring-1 ring-violet-400/25">
-                <Sparkles className="size-8" />
-              </div>
-              <h2 className="mt-6 text-xl font-bold tracking-tight text-white sm:text-2xl">
-                Ready to compile your AI Founding Team report?
-              </h2>
-              <p className="mx-auto mt-3 max-w-xl text-sm leading-6 text-slate-400">
-                {completedCount < 6
-                  ? "Your CEO discovery interview is not yet completed. We recommend finishing your chat onboarding to compile full workspace parameters."
-                  : "We have mapped your core startup blueprint. The AI CEO is ready to launch specialized Research, Product, Finance, and Marketing agents to construct your strategy."}
-              </p>
-
-              {completedCount < 6 ? (
-                <div className="mt-8 flex justify-center gap-4">
-                  <Link href="/chat">
-                    <Button>
-                      Complete Interview <ArrowRight className="size-4" />
-                    </Button>
-                  </Link>
+              <div className="flex items-center gap-4">
+                {/* Autosave Indicator */}
+                <div className="w-20 text-center select-none">
+                  {saveStatus === "saving" ? (
+                    <span className="text-[10px] font-semibold text-slate-400 animate-pulse">
+                      Saving...
+                    </span>
+                  ) : saveStatus === "saved" ? (
+                    <span className="text-[10px] font-bold text-emerald-400 flex items-center justify-center gap-1">
+                      <CheckCircle2 className="size-3" /> Saved ✓
+                    </span>
+                  ) : null}
                 </div>
-              ) : (
-                <div className="mt-8 flex flex-col items-center gap-4">
-                  <Button size="lg" onClick={runOrchestrator} className="group">
-                    <Play className="size-4.5 fill-current" /> Launch AI Founding Team
-                  </Button>
-                  <span className="text-[10px] text-slate-500 font-semibold tracking-wider uppercase">
-                    Requires ~15 seconds to execute agent compilation
-                  </span>
-                </div>
-              )}
 
-              {/* Summary of Agents */}
-              <div className="mt-12 grid gap-4 border-t border-white/[0.06] pt-10 text-left sm:grid-cols-4">
-                {agentCards.map((agent) => {
-                  const Icon = agent.icon;
-                  return (
-                    <div key={agent.key} className="rounded-2xl border border-white/[0.04] bg-white/[0.015] p-5">
-                      <span className="grid size-8 place-items-center rounded-lg bg-white/[0.04] text-slate-400">
-                        <Icon className="size-4" />
+                {/* Export triggers */}
+                <div className="flex items-center gap-2">
+                  {["PDF", "Pitch Deck"].map((exp) => (
+                    <button
+                      key={exp}
+                      onClick={() => handleTriggerExportPlaceholder(exp)}
+                      className="group relative flex items-center gap-1.5 rounded-lg border border-white/10 bg-white/[0.02] px-3 py-1.5 text-[10px] font-bold text-slate-400 hover:border-violet-400/30 hover:text-white transition"
+                    >
+                      <Download className="size-3" />
+                      <span>{exp}</span>
+                      <span className="pointer-events-none absolute -bottom-10 left-1/2 -translate-x-1/2 w-28 rounded border border-white/10 bg-slate-900 px-2 py-1 text-[8px] font-semibold text-cyan-300 opacity-0 transition group-hover:opacity-100 shadow-xl">
+                        Coming in Phase 6
                       </span>
-                      <h3 className="mt-4 text-xs font-bold text-slate-300">{agent.name}</h3>
-                      <p className="mt-1.5 text-[11px] leading-5 text-slate-500">{agent.desc}</p>
-                    </div>
-                  );
-                })}
+                    </button>
+                  ))}
+                </div>
               </div>
             </div>
-          )}
+          </div>
 
-          {/* 2. STATE: Running - Progress Monitor */}
-          {orchestrationState === "running" && (
-            <div className="mt-8 space-y-6">
-              {/* CEO Status Log */}
-              <div className="flex items-start gap-4 rounded-3xl border border-violet-500/20 bg-gradient-to-r from-violet-600/10 to-transparent p-5 backdrop-blur-sm">
-                <span className="grid size-10 place-items-center rounded-xl bg-violet-400/20 text-violet-200 ring-1 ring-violet-300/30">
-                  <Bot className="size-5.5 text-cyan-200" />
-                </span>
-                <div className="flex-1">
-                  <span className="text-[10px] font-bold uppercase tracking-wider text-cyan-300">
-                    CEO Coordination Log
-                  </span>
-                  <p className="mt-1 text-sm font-medium leading-relaxed text-slate-100 italic">
-                    &quot;{ceoLog}&quot;
-                  </p>
-                  <div className="mt-4 flex items-center justify-between text-xs text-slate-500">
-                    <span>Overall Orchestration Pipeline</span>
-                    <span className="font-mono text-cyan-300">{getOrchestrationPercent()}%</span>
-                  </div>
-                  <div className="mt-2 h-1.5 w-full rounded-full bg-white/[0.04] overflow-hidden">
-                    <div
-                      className="h-full rounded-full bg-gradient-to-r from-blue-500 to-cyan-400 transition-all duration-500"
-                      style={{ width: `${getOrchestrationPercent()}%` }}
-                    />
-                  </div>
-                </div>
-              </div>
+          {/* Mobile Category Navigation Drawer */}
+          <AnimatePresence>
+            {mobileMenuOpen && (
+              <>
+                <motion.div
+                  initial={{ opacity: 0 }}
+                  animate={{ opacity: 0.5 }}
+                  exit={{ opacity: 0 }}
+                  onClick={() => setMobileMenuOpen(false)}
+                  className="fixed inset-0 z-40 bg-black lg:hidden"
+                />
+                <motion.div
+                  initial={{ x: "-100%" }}
+                  animate={{ x: 0 }}
+                  exit={{ x: "-100%" }}
+                  transition={{ type: "spring", damping: 25, stiffness: 200 }}
+                  className="fixed inset-y-0 left-0 z-50 w-[270px] p-5 bg-ink lg:hidden border-r border-white/10 flex flex-col"
+                >
+                  <BrandMark />
+                  <nav className="mt-8 space-y-1">
+                    {navItems.map((item) => (
+                      <button
+                        key={item.key}
+                        onClick={() => {
+                          setActiveSection(item.key as SectionTab);
+                          setMobileMenuOpen(false);
+                        }}
+                        className={`w-full flex items-center justify-between rounded-xl px-4 py-2.5 text-left text-xs font-semibold transition ${
+                          activeSection === item.key
+                            ? "bg-gradient-to-r from-blue-600/10 to-violet-600/10 text-cyan-300 ring-1 ring-cyan-400/20"
+                            : "text-slate-400 hover:bg-white/[0.01] hover:text-white"
+                        }`}
+                      >
+                        <span>{item.label}</span>
+                      </button>
+                    ))}
+                  </nav>
+                </motion.div>
+              </>
+            )}
+          </AnimatePresence>
 
-              {/* Agent Grid */}
-              <div className="grid gap-4 sm:grid-cols-2">
-                {agentCards.map((agent) => {
-                  const Icon = agent.icon;
-                  const status = agentStatuses[agent.key as AgentKey];
-                  const timer = agentTimers[agent.key as AgentKey];
-                  const isExpanded = expandedAgent === agent.key;
+          {/* Metrics summary widgets */}
+          <div className="mt-8">
+            <Summary data={workspace} />
+          </div>
 
-                  const isRunning = status === "running";
-                  const isCompleted = status === "completed";
-                  const isFailed = status === "failed";
-
-                  return (
-                    <div
-                      key={agent.key}
-                      className={`flex flex-col rounded-2xl border transition duration-300 p-5 ${
-                        isRunning
-                          ? "border-cyan-500/40 bg-cyan-950/10 shadow-[0_0_30px_rgba(34,211,238,0.06)]"
-                          : isFailed
-                          ? "border-rose-500/40 bg-rose-950/10"
-                          : isCompleted
-                          ? "border-white/10 bg-[#080d20]/50"
-                          : "border-white/5 bg-[#060815]/30 opacity-60"
-                      }`}
-                    >
-                      <div className="flex items-start justify-between">
-                        <div className="flex items-center gap-3">
-                          <span
-                            className={`grid size-10 place-items-center rounded-xl ring-1 ${
-                              isRunning
-                                ? "bg-cyan-500/10 text-cyan-300 ring-cyan-400/25"
-                                : isFailed
-                                ? "bg-rose-500/10 text-rose-300 ring-rose-400/25"
-                                : isCompleted
-                                ? "bg-emerald-500/10 text-emerald-300 ring-emerald-400/25"
-                                : "bg-white/[0.02] text-slate-500 ring-white/5"
-                            }`}
-                          >
-                            <Icon className="size-4.5" />
-                          </span>
-                          <div>
-                            <h3 className="text-sm font-bold text-white">{agent.name}</h3>
-                            <p className="text-[10px] text-slate-500">{agent.desc}</p>
-                          </div>
-                        </div>
-
-                        {/* Badges / Timers */}
-                        <div className="text-right">
-                          <span className="block text-[10px] font-mono font-semibold text-slate-500">
-                            {timer > 0 ? `${timer.toFixed(1)}s` : "0.0s"}
-                          </span>
-                          <span
-                            className={`mt-1.5 inline-block rounded-full border px-2 py-0.5 text-[8px] font-bold uppercase tracking-wider ${
-                              isRunning
-                                ? "border-cyan-500/20 bg-cyan-500/10 text-cyan-300 animate-pulse"
-                                : isFailed
-                                ? "border-rose-500/20 bg-rose-500/10 text-rose-300"
-                                : isCompleted
-                                ? "border-emerald-500/20 bg-emerald-500/10 text-emerald-300"
-                                : "border-white/5 bg-white/[0.02] text-slate-600"
-                            }`}
-                          >
-                            {isRunning ? "Running" : isFailed ? "Failed" : isCompleted ? "Complete" : "Pending"}
-                          </span>
-                        </div>
-                      </div>
-
-                      {/* Expand Button for finished agents */}
-                      {isCompleted && (
-                        <div className="mt-4 border-t border-white/[0.05] pt-3 flex justify-between items-center">
-                          <span className="text-[10px] text-slate-500 font-semibold">Report Generated</span>
-                          <button
-                            onClick={() => setExpandedAgent(isExpanded ? null : agent.key)}
-                            className="flex items-center gap-1 text-[10px] font-bold text-cyan-300 hover:text-white transition"
-                          >
-                            {isExpanded ? (
-                              <>
-                                Hide Report <ChevronUp className="size-3" />
-                              </>
-                            ) : (
-                              <>
-                                Inspect Report <ChevronDown className="size-3" />
-                              </>
-                            )}
-                          </button>
-                        </div>
-                      )}
-
-                      {/* Retry Button for failed agents */}
-                      {isFailed && (
-                        <div className="mt-4 border-t border-white/[0.05] pt-3 flex justify-between items-center">
-                          <span className="text-[10px] text-rose-400 font-semibold flex items-center gap-1">
-                            <AlertCircle className="size-3" /> Failed to compile
-                          </span>
-                          <button
-                            onClick={() => handleRetryAgent(agent.key as AgentKey)}
-                            className="flex items-center gap-1.5 rounded-lg bg-rose-500 px-3 py-1.5 text-[10px] font-bold text-white hover:bg-rose-600 transition"
-                          >
-                            <RefreshCw className="size-3" /> Retry Agent
-                          </button>
-                        </div>
-                      )}
-
-                      {/* Collapsible Content Area */}
-                      {isExpanded && isCompleted && (
-                        <div className="mt-4 max-h-60 overflow-y-auto rounded-xl border border-white/5 bg-slate-950/40 p-4 text-xs shadow-inner">
-                          {renderMarkdown(agent.output)}
-                        </div>
-                      )}
-                    </div>
-                  );
-                })}
-              </div>
-
-              {/* Synthesis Loader */}
-              <div
-                className={`rounded-2xl border p-5 ${
-                  agentStatuses.synthesis === "running"
-                    ? "border-violet-500/40 bg-violet-950/10 shadow-[0_0_30px_rgba(139,92,246,0.06)]"
-                    : agentStatuses.synthesis === "completed"
-                    ? "border-white/10 bg-[#080d20]/50"
-                    : "border-white/5 bg-[#060815]/30 opacity-60"
-                }`}
+          {/* 4. MAIN EDITABLE VIEWS PANEL */}
+          <section className="mt-6 min-h-[500px] rounded-3xl border border-white/10 bg-[#070b19]/80 p-6 shadow-2xl backdrop-blur-xl sm:p-8">
+            <AnimatePresence mode="wait">
+              <motion.div
+                key={activeSection}
+                initial={{ opacity: 0, y: 10 }}
+                animate={{ opacity: 1, y: 0 }}
+                exit={{ opacity: 0, y: -10 }}
+                transition={{ duration: 0.25 }}
               >
-                <div className="flex items-center justify-between">
-                  <div className="flex items-center gap-3">
-                    <span
-                      className={`grid size-10 place-items-center rounded-xl ring-1 ${
-                        agentStatuses.synthesis === "running"
-                          ? "bg-violet-500/10 text-violet-300 ring-violet-400/25"
-                          : agentStatuses.synthesis === "completed"
-                          ? "bg-emerald-500/10 text-emerald-300 ring-emerald-400/25"
-                          : "bg-white/[0.02] text-slate-500 ring-white/5"
-                      }`}
-                    >
-                      <Bot className="size-4.5" />
-                    </span>
-                    <div>
-                      <h3 className="text-sm font-bold text-white">CEO Synthesis</h3>
-                      <p className="text-[10px] text-slate-500">Compiles Executive Strategy & removes contradictions</p>
+                {/* 4.1 VIEW: Startup Overview */}
+                {activeSection === "overview" && (
+                  <div className="space-y-5">
+                    <h2 className="text-xl font-bold text-white flex items-center gap-2 border-b border-white/5 pb-2.5">
+                      Startup Overview
+                    </h2>
+                    <div className="grid gap-4 sm:grid-cols-2">
+                      <FieldCard
+                        id="overview-name"
+                        label="Startup Name"
+                        value={workspace.overview.name}
+                        onSave={(val) => handleUpdateField("overview", "name", val)}
+                        type="input"
+                        highlight={highlightFieldId === "overview-name"}
+                      />
+                      <FieldCard
+                        id="overview-tagline"
+                        label="Tagline"
+                        value={workspace.overview.tagline}
+                        onSave={(val) => handleUpdateField("overview", "tagline", val)}
+                        type="input"
+                        highlight={highlightFieldId === "overview-tagline"}
+                      />
                     </div>
-                  </div>
-
-                  <div className="text-right">
-                    <span className="block text-[10px] font-mono font-semibold text-slate-500">
-                      {agentTimers.synthesis > 0 ? `${agentTimers.synthesis.toFixed(1)}s` : "0.0s"}
-                    </span>
-                    <span
-                      className={`mt-1.5 inline-block rounded-full border px-2 py-0.5 text-[8px] font-bold uppercase tracking-wider ${
-                        agentStatuses.synthesis === "running"
-                          ? "border-violet-500/20 bg-violet-500/10 text-violet-300 animate-pulse"
-                          : agentStatuses.synthesis === "failed"
-                          ? "border-rose-500/20 bg-rose-500/10 text-rose-300"
-                          : agentStatuses.synthesis === "completed"
-                          ? "border-emerald-500/20 bg-emerald-500/10 text-emerald-300"
-                          : "border-white/5 bg-white/[0.02] text-slate-600"
-                      }`}
-                    >
-                      {agentStatuses.synthesis === "running"
-                        ? "Running"
-                        : agentStatuses.synthesis === "failed"
-                        ? "Failed"
-                        : agentStatuses.synthesis === "completed"
-                        ? "Complete"
-                        : "Pending"}
-                    </span>
-                  </div>
-                </div>
-
-                {agentStatuses.synthesis === "failed" && (
-                  <div className="mt-4 border-t border-white/[0.05] pt-3 flex justify-between items-center">
-                    <span className="text-[10px] text-rose-400 font-semibold flex items-center gap-1">
-                      <AlertCircle className="size-3" /> Synthesis failure
-                    </span>
-                    <button
-                      onClick={() => handleRetryAgent("synthesis")}
-                      className="flex items-center gap-1.5 rounded-lg bg-rose-500 px-3 py-1.5 text-[10px] font-bold text-white hover:bg-rose-600 transition"
-                    >
-                      <RefreshCw className="size-3" /> Retry Synthesis
-                    </button>
+                    <FieldCard
+                      id="overview-problem"
+                      label="The Problem"
+                      value={workspace.overview.problem}
+                      onSave={(val) => handleUpdateField("overview", "problem", val)}
+                      highlight={highlightFieldId === "overview-problem"}
+                    />
+                    <FieldCard
+                      id="overview-solution"
+                      label="The Solution"
+                      value={workspace.overview.solution}
+                      onSave={(val) => handleUpdateField("overview", "solution", val)}
+                      highlight={highlightFieldId === "overview-solution"}
+                    />
+                    <div className="grid gap-4 sm:grid-cols-2">
+                      <FieldCard
+                        id="overview-mission"
+                        label="Mission Statement"
+                        value={workspace.overview.mission}
+                        onSave={(val) => handleUpdateField("overview", "mission", val)}
+                        highlight={highlightFieldId === "overview-mission"}
+                      />
+                      <FieldCard
+                        id="overview-vision"
+                        label="Vision Statement"
+                        value={workspace.overview.vision}
+                        onSave={(val) => handleUpdateField("overview", "vision", val)}
+                        highlight={highlightFieldId === "overview-vision"}
+                      />
+                    </div>
+                    <div className="grid gap-4 sm:grid-cols-3">
+                      <FieldCard
+                        id="overview-targetUsers"
+                        label="Target Users"
+                        value={workspace.overview.targetUsers}
+                        onSave={(val) => handleUpdateField("overview", "targetUsers", val)}
+                        type="input"
+                        highlight={highlightFieldId === "overview-targetUsers"}
+                      />
+                      <FieldCard
+                        id="overview-industry"
+                        label="Industry"
+                        value={workspace.overview.industry}
+                        onSave={(val) => handleUpdateField("overview", "industry", val)}
+                        type="input"
+                        highlight={highlightFieldId === "overview-industry"}
+                      />
+                      <FieldCard
+                        id="overview-businessModel"
+                        label="Business Model"
+                        value={workspace.overview.businessModel}
+                        onSave={(val) => handleUpdateField("overview", "businessModel", val)}
+                        type="input"
+                        highlight={highlightFieldId === "overview-businessModel"}
+                      />
+                    </div>
                   </div>
                 )}
-              </div>
-            </div>
-          )}
 
-          {/* 3. STATE: Completed - Tabbed Workspace View */}
-          {orchestrationState === "completed" && (
-            <div className="mt-8 grid gap-6 md:grid-cols-[240px_1fr]">
-              {/* Workspace Navigation Tabs */}
-              <div className="flex flex-col gap-1 rounded-2xl border border-white/10 bg-[#070b19]/80 p-3 shadow-xl backdrop-blur-xl h-fit">
-                <span className="px-3 py-1.5 text-[10px] font-bold uppercase tracking-wider text-slate-600">
-                  Workspace Tabs
-                </span>
+                {/* 4.2 VIEW: Research Section */}
+                {activeSection === "research" && (
+                  <div className="space-y-5">
+                    <h2 className="text-xl font-bold text-white flex items-center gap-2 border-b border-white/5 pb-2.5">
+                      Market Research & SWOT
+                    </h2>
+                    <FieldCard
+                      id="research-marketSummary"
+                      label="Market Summary"
+                      value={workspace.research.marketSummary}
+                      onSave={(val) => handleUpdateField("research", "marketSummary", val)}
+                      highlight={highlightFieldId === "research-marketSummary"}
+                    />
+                    <FieldCard
+                      id="research-competitors"
+                      label="Direct & Indirect Competitors"
+                      value={workspace.research.competitors}
+                      onSave={(val) => handleUpdateField("research", "competitors", val)}
+                      highlight={highlightFieldId === "research-competitors"}
+                    />
+                    <div className="grid gap-4 sm:grid-cols-3">
+                      <FieldCard
+                        id="research-marketDemand"
+                        label="Market Demand Score"
+                        value={workspace.research.marketDemand}
+                        onSave={(val) => handleUpdateField("research", "marketDemand", val)}
+                        type="input"
+                        highlight={highlightFieldId === "research-marketDemand"}
+                      />
+                      <FieldCard
+                        id="research-opportunities"
+                        label="Key Opportunities"
+                        value={workspace.research.opportunities}
+                        onSave={(val) => handleUpdateField("research", "opportunities", val)}
+                        highlight={highlightFieldId === "research-opportunities"}
+                      />
+                      <FieldCard
+                        id="research-risks"
+                        label="Primary Risks"
+                        value={workspace.research.risks}
+                        onSave={(val) => handleUpdateField("research", "risks", val)}
+                        highlight={highlightFieldId === "research-risks"}
+                      />
+                    </div>
+                    <FieldCard
+                      id="research-swotAnalysis"
+                      label="Full SWOT Matrix"
+                      value={workspace.research.swotAnalysis}
+                      onSave={(val) => handleUpdateField("research", "swotAnalysis", val)}
+                      highlight={highlightFieldId === "research-swotAnalysis"}
+                    />
+                    <FieldCard
+                      id="research-recommendations"
+                      label="CEO Core Recommendations"
+                      value={workspace.research.recommendations}
+                      onSave={(val) => handleUpdateField("research", "recommendations", val)}
+                      highlight={highlightFieldId === "research-recommendations"}
+                    />
+                  </div>
+                )}
 
-                {[
-                  { key: "summary", label: "Executive Summary" },
-                  { key: "market", label: "Market Analysis" },
-                  { key: "competitors", label: "Competitor & SWOT" },
-                  { key: "business", label: "Business Model" },
-                  { key: "revenue", label: "Revenue Forecast" },
-                  { key: "product", label: "MVP Roadmap" },
-                  { key: "marketing", label: "GTM Marketing" },
-                ].map((tab) => (
-                  <button
-                    key={tab.key}
-                    onClick={() => setActiveTab(tab.key)}
-                    className={`flex items-center justify-between rounded-xl px-3 py-2.5 text-left text-xs font-semibold transition ${
-                      activeTab === tab.key
-                        ? "bg-gradient-to-r from-blue-600/10 to-violet-600/10 text-cyan-300 ring-1 ring-cyan-400/20"
-                        : "text-slate-400 hover:bg-white/[0.02] hover:text-white"
-                    }`}
-                  >
-                    <span>{tab.label}</span>
-                    {activeTab === tab.key && <span className="size-1.5 rounded-full bg-cyan-300 shadow-[0_0_8px_#67e8f9]" />}
-                  </button>
-                ))}
-              </div>
+                {/* 4.3 VIEW: Product Section */}
+                {activeSection === "product" && (
+                  <div className="space-y-5">
+                    <h2 className="text-xl font-bold text-white flex items-center gap-2 border-b border-white/5 pb-2.5">
+                      MVP & Tech Stack Scoping
+                    </h2>
+                    <FieldCard
+                      id="product-mvpFeatures"
+                      label="Phase 1 MVP Features"
+                      value={workspace.product.mvpFeatures}
+                      onSave={(val) => handleUpdateField("product", "mvpFeatures", val)}
+                      highlight={highlightFieldId === "product-mvpFeatures"}
+                    />
+                    <FieldCard
+                      id="product-futureFeatures"
+                      label="Phase 2 & 3 Roadmap features"
+                      value={workspace.product.futureFeatures}
+                      onSave={(val) => handleUpdateField("product", "futureFeatures", val)}
+                      highlight={highlightFieldId === "product-futureFeatures"}
+                    />
+                    <FieldCard
+                      id="product-techStack"
+                      label="Recommended Tech Stack"
+                      value={workspace.product.techStack}
+                      onSave={(val) => handleUpdateField("product", "techStack", val)}
+                      highlight={highlightFieldId === "product-techStack"}
+                    />
+                    <div className="grid gap-4 sm:grid-cols-2">
+                      <FieldCard
+                        id="product-devRoadmap"
+                        label="Development Roadmap Overview"
+                        value={workspace.product.devRoadmap}
+                        onSave={(val) => handleUpdateField("product", "devRoadmap", val)}
+                        highlight={highlightFieldId === "product-devRoadmap"}
+                      />
+                      <FieldCard
+                        id="product-timeline"
+                        label="Timeline Milestones"
+                        value={workspace.product.timeline}
+                        onSave={(val) => handleUpdateField("product", "timeline", val)}
+                        highlight={highlightFieldId === "product-timeline"}
+                      />
+                    </div>
+                  </div>
+                )}
 
-              {/* Workspace Active Tab View Panel */}
-              <div className="min-h-[500px] rounded-3xl border border-white/10 bg-[#070b19]/80 p-6 shadow-2xl backdrop-blur-xl md:p-8">
-                {renderMarkdown(getTabContent())}
-              </div>
-            </div>
-          )}
+                {/* 4.4 VIEW: Finance Section */}
+                {activeSection === "finance" && (
+                  <div className="space-y-5">
+                    <h2 className="text-xl font-bold text-white flex items-center gap-2 border-b border-white/5 pb-2.5">
+                      Financial Models & Forecasts
+                    </h2>
+                    <div className="grid gap-4 sm:grid-cols-2">
+                      <FieldCard
+                        id="finance-pricing"
+                        label="Pricing Structure Tiers"
+                        value={workspace.finance.pricing}
+                        onSave={(val) => handleUpdateField("finance", "pricing", val)}
+                        highlight={highlightFieldId === "finance-pricing"}
+                      />
+                      <FieldCard
+                        id="finance-revenueModel"
+                        label="Revenue Model Mechanics"
+                        value={workspace.finance.revenueModel}
+                        onSave={(val) => handleUpdateField("finance", "revenueModel", val)}
+                        highlight={highlightFieldId === "finance-revenueModel"}
+                      />
+                    </div>
+                    <FieldCard
+                      id="finance-revenueProjection"
+                      label="12-Month Projections"
+                      value={workspace.finance.revenueProjection}
+                      onSave={(val) => handleUpdateField("finance", "revenueProjection", val)}
+                      highlight={highlightFieldId === "finance-revenueProjection"}
+                    />
+                    <div className="grid gap-4 sm:grid-cols-3">
+                      <FieldCard
+                        id="finance-startupCost"
+                        label="Launch Startup Costs"
+                        value={workspace.finance.startupCost}
+                        onSave={(val) => handleUpdateField("finance", "startupCost", val)}
+                        type="input"
+                        highlight={highlightFieldId === "finance-startupCost"}
+                      />
+                      <FieldCard
+                        id="finance-breakEven"
+                        label="Break-even Forecast"
+                        value={workspace.finance.breakEven}
+                        onSave={(val) => handleUpdateField("finance", "breakEven", val)}
+                        type="input"
+                        highlight={highlightFieldId === "finance-breakEven"}
+                      />
+                      <FieldCard
+                        id="finance-fundingNeed"
+                        label="Required Funding Target"
+                        value={workspace.finance.fundingNeed}
+                        onSave={(val) => handleUpdateField("finance", "fundingNeed", val)}
+                        type="input"
+                        highlight={highlightFieldId === "finance-fundingNeed"}
+                      />
+                    </div>
+                  </div>
+                )}
+
+                {/* 4.5 VIEW: Marketing Section */}
+                {activeSection === "marketing" && (
+                  <div className="space-y-5">
+                    <h2 className="text-xl font-bold text-white flex items-center gap-2 border-b border-white/5 pb-2.5">
+                      Launch & GTM Marketing Strategy
+                    </h2>
+                    <FieldCard
+                      id="marketing-gtmPlan"
+                      label="Go-to-market plan"
+                      value={workspace.marketing.gtmPlan}
+                      onSave={(val) => handleUpdateField("marketing", "gtmPlan", val)}
+                      highlight={highlightFieldId === "marketing-gtmPlan"}
+                    />
+                    <FieldCard
+                      id="marketing-channels"
+                      label="Acquisition Channels"
+                      value={workspace.marketing.channels}
+                      onSave={(val) => handleUpdateField("marketing", "channels", val)}
+                      highlight={highlightFieldId === "marketing-channels"}
+                    />
+                    <div className="grid gap-4 sm:grid-cols-3">
+                      <FieldCard
+                        id="marketing-targetAudience"
+                        label="Target Marketing Audience"
+                        value={workspace.marketing.targetAudience}
+                        onSave={(val) => handleUpdateField("marketing", "targetAudience", val)}
+                        type="input"
+                        highlight={highlightFieldId === "marketing-targetAudience"}
+                      />
+                      <FieldCard
+                        id="marketing-socialStrategy"
+                        label="Social Strategy Loops"
+                        value={workspace.marketing.socialStrategy}
+                        onSave={(val) => handleUpdateField("marketing", "socialStrategy", val)}
+                        highlight={highlightFieldId === "marketing-socialStrategy"}
+                      />
+                      <FieldCard
+                        id="marketing-growthPlan"
+                        label="Viral Referral Growth Plan"
+                        value={workspace.marketing.growthPlan}
+                        onSave={(val) => handleUpdateField("marketing", "growthPlan", val)}
+                        highlight={highlightFieldId === "marketing-growthPlan"}
+                      />
+                    </div>
+                  </div>
+                )}
+
+                {/* 4.6 VIEW: Roadmap Timeline */}
+                {activeSection === "roadmap" && (
+                  <Roadmap roadmap={workspace.roadmap} onSaveNode={handleUpdateRoadmap} />
+                )}
+
+                {/* 4.7 VIEW: Business Model Canvas */}
+                {activeSection === "canvas" && (
+                  <CanvasGrid canvas={workspace.canvas} onSaveField={handleUpdateCanvas} />
+                )}
+              </motion.div>
+            </AnimatePresence>
+          </section>
         </div>
       </main>
     </div>

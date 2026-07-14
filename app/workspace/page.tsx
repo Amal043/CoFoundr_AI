@@ -412,10 +412,6 @@ function WorkspaceContent() {
     }, 100);
   };
 
-  const handleTriggerExportPlaceholder = (type: string) => {
-    alert(`"${type}" export is a premium feature scheduled for Phase 6.`);
-  };
-
   const navItems = [
     { key: "overview", label: "Startup Overview" },
     { key: "research", label: "Research Report" },
@@ -603,21 +599,22 @@ function WorkspaceContent() {
                   ) : null}
                 </div>
 
-                {/* Exports placeholders */}
+                {/* Exports triggers */}
                 <div className="flex items-center gap-2">
-                  {["PDF", "Pitch Deck"].map((exp) => (
-                    <button
-                      key={exp}
-                      onClick={() => handleTriggerExportPlaceholder(exp)}
-                      className="group relative flex items-center gap-1.5 rounded-lg border border-white/10 bg-white/[0.02] px-3 py-1.5 text-[10px] font-bold text-slate-400 hover:border-violet-400/30 hover:text-white transition"
-                    >
-                      <Download className="size-3" />
-                      <span>{exp}</span>
-                      <span className="pointer-events-none absolute -bottom-10 left-1/2 -translate-x-1/2 w-28 rounded border border-white/10 bg-slate-900 px-2 py-1 text-[8px] font-semibold text-cyan-300 opacity-0 transition group-hover:opacity-100 shadow-xl">
-                        Coming in Phase 6
-                      </span>
-                    </button>
-                  ))}
+                  <button
+                    onClick={() => window.print()}
+                    className="flex items-center gap-1.5 rounded-lg border border-white/10 bg-white/[0.02] px-3 py-1.5 text-[10px] font-bold text-slate-400 hover:border-cyan-500/30 hover:text-white transition"
+                  >
+                    <Download className="size-3" />
+                    <span>PDF</span>
+                  </button>
+                  <Link
+                    href="/investor"
+                    className="flex items-center gap-1.5 rounded-lg border border-cyan-500/20 bg-cyan-500/5 hover:bg-cyan-500/10 px-3 py-1.5 text-[10px] font-bold text-cyan-300 hover:text-white transition"
+                  >
+                    <Download className="size-3" />
+                    <span>Pitch Deck</span>
+                  </Link>
                 </div>
               </div>
             </div>

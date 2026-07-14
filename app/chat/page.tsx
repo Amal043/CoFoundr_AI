@@ -1,2 +1,5 @@
-import { PhasePlaceholder } from "@/components/shared/phase-placeholder";
-export default function ChatPage() { return <PhasePlaceholder title="AI CEO Chat" />; }
+import { ChatInterface } from "@/components/chat/chat-interface";
+
+export default function ChatPage() {
+  return <ChatInterface />;
+}

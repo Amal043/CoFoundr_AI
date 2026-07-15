@@ -243,7 +243,7 @@ export default function DashboardPage() {
             <div className="flex items-center gap-2.5">
               {!workspaceComplete && (
                 <Button size="sm" variant="outline" className="border-cyan-500/30 text-cyan-300 hover:bg-cyan-500/10" onClick={handleTryDemo}>
-                  Try Demo Mode
+                  Explore Demo Startup
                 </Button>
               )}
               <Link href={workspaceComplete ? "/workspace" : "/chat"}>

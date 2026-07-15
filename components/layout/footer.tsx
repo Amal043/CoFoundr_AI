@@ -3,7 +3,6 @@ import Link from "next/link";
 
 import { BrandMark } from "@/components/shared/brand-mark";
 
-const footerLinks = ["About", "Privacy", "Terms"];
 
 export function Footer() {
   return (
@@ -12,16 +11,19 @@ export function Footer() {
         <div className="flex flex-col justify-between gap-10 md:flex-row md:items-end">
           <div className="max-w-sm">
             <BrandMark />
-            <p className="mt-4 text-sm leading-6 text-slate-400">The AI founding team that turns ambitious ideas into investor-ready startups.</p>
+            <p className="mt-4 text-sm leading-6 text-slate-400">
+              AI-powered startup workspace helping founders validate ideas, plan products, and build investor-ready businesses.
+            </p>
           </div>
           <div className="flex flex-wrap gap-x-7 gap-y-3 text-sm text-slate-400">
-            {footerLinks.map((link) => <Link key={link} href="#" className="transition hover:text-white">{link}</Link>)}
-            <a href="https://github.com" target="_blank" rel="noreferrer" className="transition hover:text-white">GitHub</a>
-            <a href="https://openai.com" target="_blank" rel="noreferrer" className="transition hover:text-white">OpenAI Build Week</a>
+            <Link href="/about" className="transition hover:text-white">About</Link>
+            <Link href="/privacy" className="transition hover:text-white">Privacy Policy</Link>
+            <Link href="/terms" className="transition hover:text-white">Terms & Conditions</Link>
+            <a href="mailto:support@cofoundr.ai" className="transition hover:text-white">Contact</a>
           </div>
         </div>
         <div className="mt-10 flex flex-col-reverse gap-5 border-t border-white/10 pt-7 sm:flex-row sm:items-center sm:justify-between">
-          <p className="text-xs text-slate-500">© {new Date().getFullYear()} CoFoundr AI. Built for founders with conviction.</p>
+          <p className="text-xs text-slate-500">© {new Date().getFullYear()} CoFoundr AI. Your AI Founding Team. Built for founders with conviction.</p>
           <div className="flex items-center gap-3">
             {[Github, Twitter, Linkedin].map((Icon, index) => (
               <a key={index} href="#" aria-label="Social link" className="grid size-8 place-items-center rounded-lg border border-white/10 text-slate-400 transition hover:border-violet-400/40 hover:bg-violet-400/10 hover:text-violet-200"><Icon className="size-4" /></a>

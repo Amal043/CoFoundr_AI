@@ -142,7 +142,7 @@ export default function SettingsPage() {
                   </span>
                 ) : (
                   <span className="inline-flex items-center gap-1.5 rounded-full bg-amber-500/10 border border-amber-500/25 px-3.5 py-1 text-xs font-bold text-amber-300">
-                    <ShieldAlert className="size-4" /> Fallback Mode: Active (Local Mock Simulation)
+                    <ShieldAlert className="size-4" /> Offline Sandbox Mode: Active (Simulated Workspace)
                   </span>
                 )}
               </div>
@@ -203,7 +203,7 @@ export default function SettingsPage() {
               <div>
                 <h4 className="text-xs font-bold text-slate-200">About CoFoundr AI</h4>
                 <p className="mt-1 text-[11px] text-slate-500 leading-relaxed font-medium">
-                  Developed for the OpenAI Build Week. Version 1.0.0-beta. Designed as an AI Operating System for validating and building pre-seed start-ups using coordinating agent teams.
+                  CoFoundr AI Version 1.0.0. Designed as an AI Operating System for validating and building startups using coordinating agent teams.
                 </p>
               </div>
             </section>

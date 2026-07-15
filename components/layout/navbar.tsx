@@ -34,8 +34,8 @@ export function Navbar() {
               {item.label}
             </Link>
           ))}
-          <a href="https://github.com" target="_blank" rel="noreferrer" className="text-sm text-slate-400 transition hover:text-white">
-            GitHub
+          <a href="mailto:support@cofoundr.ai" className="text-sm text-slate-400 transition hover:text-white">
+            Contact
           </a>
         </div>
 
